@@ -3,6 +3,7 @@ import {
   AlertCircle,
   Check,
   CheckCircle2,
+  Copy,
   CreditCard,
   ExternalLink,
   Loader2,
@@ -38,6 +39,27 @@ const initialForm: BillingForm = {
 }
 
 const onlyNumbers = (v: string, max: number) => v.replace(/\D/g, '').slice(0, max)
+
+// Botón para copiar el código de transacción (estado local, independiente del flujo)
+function CopyButton({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        void navigator.clipboard?.writeText(value).then(() => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1500)
+        })
+      }}
+      aria-label="Copiar código de transacción"
+      className="inline-flex shrink-0 items-center gap-1 rounded-[5px] border border-slate-300 bg-white px-2 py-1 font-mono text-[10px] font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+    >
+      {copied ? <Check size={12} strokeWidth={1.75} /> : <Copy size={12} strokeWidth={1.75} />}
+      {copied ? 'COPIADO' : 'COPIAR'}
+    </button>
+  )
+}
 
 interface Props {
   initialPlan?: Plan | null
@@ -257,31 +279,33 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
 
   return (
     <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 grid place-items-center bg-slate-950/60 backdrop-blur-sm p-4">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[5px] border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
 
-        {/* Cabecera y Barra de Progreso Contextual */}
-        <div className="border-b border-slate-200 px-6 py-4 dark:border-slate-800">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] tracking-wider text-emerald-700 dark:text-emerald-400 font-semibold uppercase">
-              {result ? 'REGISTRO COMPLETADO' : `PASO ${step} · ${step === 0 ? 'PLAN' : step === 1 ? 'ACCESO' : step === 2 ? 'VERIFICACIÓN' : step === 3 ? 'COMERCIO' : 'PAGO'}`}
+        {/* Cabecera compacta */}
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-5 py-3 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <h2 className="truncate text-sm font-semibold tracking-tight text-slate-900 dark:text-white">
+              {result ? 'Registro completado' : 'Suscripción'}
+            </h2>
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-[5px] border border-emerald-600/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              {isTrial ? 'Prueba 14 días' : `Plan ${selectedPlan.name} · S/ ${selectedPlan.price}/mes`}
             </span>
-            <button type="button" onClick={onClose} aria-label="Cerrar" className="text-slate-400 hover:text-slate-700 dark:hover:text-white">
-              <X size={18} />
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {!result && step > 0 && (
+              <span className="font-mono text-[11px] text-slate-500">
+                Paso {step === 4 ? 3 : step === 3 ? 2 : 1} de 3
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Cerrar"
+              className="grid h-7 w-7 place-items-center rounded-[5px] border border-slate-200 text-slate-500 transition-colors hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:hover:bg-slate-800 dark:hover:text-white"
+            >
+              <X size={15} />
             </button>
-          </div>
-
-          <div className="mt-2 flex items-center gap-2 text-xs text-slate-500">
-            <span className={step >= 1 ? 'font-semibold text-slate-900 dark:text-white' : ''}>1. Acceso</span>
-            <span>→</span>
-            <span className={step >= 3 ? 'font-semibold text-slate-900 dark:text-white' : ''}>2. Comercio</span>
-            <span>→</span>
-            <span className={step >= 4 || result ? 'font-semibold text-slate-900 dark:text-white' : ''}>3. Activación</span>
-          </div>
-
-          <div className="mt-3 inline-flex items-center gap-1.5 border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
-            <span>Plan:</span>
-            <strong className="font-semibold text-slate-900 dark:text-white">{selectedPlan.name}</strong>
-            <span>({isTrial ? '14 días gratis' : `S/ ${selectedPlan.price}/mes`})</span>
           </div>
         </div>
 
@@ -295,61 +319,104 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
 
           {result ? (
             /* PANTALLA DE ÉXITO */
-            <section className="text-center py-2">
-              <CheckCircle2 className="mx-auto text-emerald-600" size={46} strokeWidth={1.5} />
-              <h3 className="mt-4 text-xl font-semibold text-slate-900 dark:text-white">Cuenta Activada Correctamente</h3>
-              <p className="mt-1 text-sm text-slate-500">Tu comercio y suscripción están aprovisionados en Supabase.</p>
+            <section className="py-1">
+              <div className="text-center">
+                <CheckCircle2 className="mx-auto text-emerald-600" size={40} strokeWidth={1.5} />
+                <h3 className="mt-3 text-lg font-semibold tracking-tight text-slate-900 dark:text-white">Cuenta Activada Correctamente</h3>
+                <p className="mt-1 text-sm text-slate-500">Tu comercio y suscripción están aprovisionados.</p>
+              </div>
 
-              <dl className="mt-6 border border-slate-200 text-left text-sm dark:border-slate-800">
-                <div className="flex justify-between p-3 border-b border-slate-200 dark:border-slate-800">
-                  <dt className="text-slate-500">Razón Social</dt>
-                  <dd className="font-mono text-xs font-semibold text-slate-900 dark:text-white">{result.businessName}</dd>
+              {/* Comprobante digital troquelado */}
+              <div className="relative mt-6 rounded-[5px] border border-slate-200 bg-slate-50 shadow-sm dark:border-slate-700 dark:bg-slate-800/40">
+                <div className="h-1.5 rounded-t-[4px] bg-gradient-to-r from-emerald-500 via-teal-500 to-slate-900" aria-hidden="true" />
+                <div className="flex items-center justify-between px-4 pb-3 pt-4">
+                  <span className="font-mono text-[10px] font-semibold uppercase tracking-widest text-slate-500">Comprobante digital</span>
+                  {isTrial ? (
+                    <span className="inline-flex items-center gap-1 rounded-[5px] bg-blue-50 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-blue-700 dark:bg-blue-500/10 dark:text-blue-300">
+                      <Check size={11} strokeWidth={2.5} /> PRUEBA ACTIVA
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 rounded-[5px] bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-emerald-700 dark:text-emerald-400">
+                      <Check size={11} strokeWidth={2.5} /> PAGADO
+                    </span>
+                  )}
                 </div>
-                <div className="flex justify-between p-3 border-b border-slate-200 dark:border-slate-800">
-                  <dt className="text-slate-500">Correo Confirmado</dt>
-                  <dd className="font-mono text-xs text-slate-900 dark:text-white">{result.email}</dd>
+                <div className="flex items-center justify-between gap-3 px-4 pb-4">
+                  <p className="break-all font-mono text-sm font-semibold text-slate-900 dark:text-white">{result.id}</p>
+                  <CopyButton value={result.id} />
                 </div>
-                <div className="flex justify-between p-3 border-b border-slate-200 dark:border-slate-800">
-                  <dt className="text-slate-500">Plan</dt>
-                  <dd className="font-mono text-xs font-semibold uppercase text-slate-900 dark:text-white">{result.plan}</dd>
+
+                <div className="relative border-t border-dashed border-slate-300 dark:border-slate-600">
+                  <span className="ticket-notch l" />
+                  <span className="ticket-notch r" />
                 </div>
-                <div className="flex justify-between p-3">
-                  <dt className="text-slate-500">Comprobante</dt>
-                  <dd className="font-mono text-xs text-slate-900 dark:text-white">{result.id}</dd>
-                </div>
-              </dl>
+
+                <dl className="space-y-2.5 px-4 py-4 font-mono text-xs">
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">Razón social</dt>
+                    <dd className="break-words text-right font-semibold text-slate-900 dark:text-white">{result.businessName}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">RUC</dt>
+                    <dd className="text-right text-slate-900 dark:text-white">{form.document.length === 11 ? form.document : '—'}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">Correo</dt>
+                    <dd className="break-all text-right text-slate-900 dark:text-white">{result.email}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-slate-500">Plan</dt>
+                    <dd className="text-right font-semibold uppercase text-slate-900 dark:text-white">{result.plan}</dd>
+                  </div>
+                </dl>
+              </div>
 
               <a
                 href={ADMIN_URL}
-                className="btn-primary mt-6 flex items-center justify-center gap-2 w-full py-3"
+                className="btn-cta group mt-6 flex w-full items-center justify-center gap-2 py-3"
               >
-                Ingresar al Panel de Despacho <ExternalLink size={16} />
+                Ingresar al Panel de Despacho
+                <ExternalLink size={16} className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </a>
             </section>
           ) : step === 0 ? (
             /* PASO 0: SELECTOR DE PLAN */
             <section className="space-y-3">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">Selecciona tu Plan</h3>
-              {plans.map(p => (
-                <div
-                  key={p.id}
-                  onClick={() => setCurrentPlan(p.id)}
-                  className={`cursor-pointer border p-3.5 transition-all ${currentPlan === p.id
-                    ? 'border-emerald-600 bg-emerald-50/40 dark:bg-emerald-950/20'
-                    : 'border-slate-200 hover:border-slate-300 dark:border-slate-800'
-                    }`}
-                >
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-semibold text-sm text-slate-900 dark:text-white">{p.name}</p>
-                      <p className="text-xs text-slate-500">{p.description}</p>
+              <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">Selecciona tu Plan</h3>
+              <p className="text-sm text-slate-500">Puedes cambiar de plan en cualquier momento.</p>
+              {plans.map(p => {
+                const active = currentPlan === p.id
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => setCurrentPlan(p.id)}
+                    className={`relative cursor-pointer rounded-[5px] border p-3.5 transition-all ${active
+                      ? 'border-emerald-600 bg-emerald-50/30 ring-2 ring-emerald-500/20 dark:bg-emerald-950/20'
+                      : 'border-slate-200 hover:border-slate-300 hover:shadow-sm dark:border-slate-800'
+                      }`}
+                  >
+                    {active && (
+                      <span className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-full bg-emerald-600 text-white shadow-sm">
+                        <Check size={12} strokeWidth={3} />
+                      </span>
+                    )}
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                          {p.name}
+                          {p.id === 'growth' && (
+                            <span className="rounded-[5px] bg-emerald-600 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider text-white">RECOMENDADO</span>
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-500">{p.description}</p>
+                      </div>
+                      <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white">
+                        {p.price === 0 ? 'S/ 0' : `S/ ${p.price}/mes`}
+                      </span>
                     </div>
-                    <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white">
-                      {p.price === 0 ? 'S/ 0' : `S/ ${p.price}/mes`}
-                    </span>
                   </div>
-                </div>
-              ))}
+                )
+              })}
               <button
                 type="button"
                 onClick={() => setStep(1)}
@@ -372,7 +439,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   value={form.email}
                   onChange={e => update('email', e.target.value)}
                   placeholder="admin@tucomercio.pe"
-                  className="field"
+                  className="field bg-white text-slate-900 border-slate-300 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>
 
@@ -384,7 +451,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   value={form.password}
                   onChange={e => update('password', e.target.value)}
                   placeholder="Mínimo 8 caracteres seguros"
-                  className="field"
+                  className="field bg-white text-slate-900 border-slate-300 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 dark:bg-slate-900 dark:border-slate-700"
                 />
               </div>
 
@@ -416,7 +483,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 <button
                   type="submit"
                   disabled={!credentialsValid || loading}
-                  className="btn-primary w-full flex items-center justify-center gap-2 py-3 disabled:opacity-40"
+                  className="btn-primary w-full flex items-center justify-center gap-2 bg-slate-900 py-3 text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {loading ? <Loader2 className="animate-spin" size={16} /> : 'Registrar y Continuar →'}
                 </button>

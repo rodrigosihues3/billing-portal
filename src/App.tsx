@@ -38,7 +38,7 @@ export function App() {
   }
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50/60 text-slate-900 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 dark:text-slate-100 transition-colors">
       <Navbar dark={dark} onThemeChange={toggleTheme} onSubscribe={handleOpenGeneral} />
       <Hero onStart={handleOpenWithPlan} />
       <Metrics />
