@@ -11,11 +11,12 @@ export function Pricing({ onSelect }: PricingProps) {
             id: 'starter' as Plan,
             name: 'Starter',
             price: 99,
-            description: 'Para negocios que inician su reparto propio por WhatsApp o mostrador.',
+            description: 'Para negocios que inician su reparto propio por WhatsApp, mostrador o tienda web.',
             subtitle: 'Incluye toda la suite base:',
             features: [
                 'Hasta 2 repartidores activos simultáneos',
                 'Hasta 300 pedidos completados al mes',
+                'Conexión directa por API con tu tienda web',
                 'Panel de control administrativo general',
                 'Módulo de preparación (tablero de despacho)',
                 'App exclusiva para tus repartidores',
@@ -28,15 +29,15 @@ export function Pricing({ onSelect }: PricingProps) {
             id: 'growth' as Plan,
             name: 'Growth',
             price: 199,
-            description: 'Para negocios con tienda virtual o volumen regular de entregas.',
+            description: 'Para negocios en expansión con volumen regular de entregas y flota activa.',
             subtitle: 'Todo lo de Starter, más:',
             features: [
                 'Hasta 5 repartidores activos simultáneos',
                 'Hasta 1,000 pedidos completados al mes',
-                'Conexión automática por API con tu tienda web',
-                'Sincronización en tiempo real con tu sistema de ventas',
+                'Conexión directa por API y sincronización en tiempo real',
                 'Asignación optimizada de repartidores',
-                'Historial completo exportable de despachos'
+                'Historial completo exportable de despachos',
+                'Reportes operativos de tiempos y entregas'
             ],
             featured: true,
             badge: 'MÁS ELEGIDO',
@@ -96,7 +97,7 @@ export function Pricing({ onSelect }: PricingProps) {
                                         {plan.name}
                                     </h3>
                                     {plan.featured && (
-                                        <span className="rounded-[3px] bg-emerald-600 px-2 py-0.5 font-mono text-[10px] font-bold tracking-wider text-white">
+                                        <span className="rounded-[5px] bg-emerald-600 px-2 py-0.5 font-mono text-[10px] font-bold tracking-wider text-white">
                                             {plan.badge}
                                         </span>
                                     )}
@@ -164,19 +165,19 @@ export function Pricing({ onSelect }: PricingProps) {
                 </div>
             </div>
 
-            {/* Banner de Prueba Gratuita (Equivalencia Plan Starter) */}
+            {/* Banner de Prueba Gratuita (Equivalencia Plan Growth) */}
             <div className="mt-6 flex flex-col gap-4 rounded-[5px] border border-emerald-300/80 bg-white p-6 shadow-xs sm:flex-row sm:items-center sm:justify-between dark:border-emerald-800/80 dark:bg-slate-900">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
-                        <span className="rounded-[3px] bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
+                        <span className="rounded-[5px] bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
                             14 DÍAS GRATIS
                         </span>
                         <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                            Sin tarjeta de crédito
+                            100% Capacidades del Plan Growth
                         </span>
                     </div>
                     <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl">
-                        Comienza con las capacidades completas del <strong>Plan Starter</strong>. Requiere únicamente el RUC activo de tu negocio para activar el entorno de trabajo.
+                        La prueba gratuita de 14 días hereda el 100% de las capacidades del <strong>Plan Growth</strong>: hasta 1,000 pedidos al mes, 5 repartidores activos y conexión directa por API.
                     </p>
                 </div>
                 <button
