@@ -24,7 +24,7 @@ import {
   registerAdminUser,
   resendVerificationEmail
 } from '../services/billingService'
-import { buscarDocumentoFiscal, RUC_DEMO } from '../services/decolectaService'
+import { buscarDocumentoFiscal, DNI_DEMO, RUC_DEMO } from '../services/decolectaService'
 import { plans, type BillingForm, type PaymentMethod, type Plan, type Transaction } from '../types/billing'
 
 const ADMIN_URL = import.meta.env.VITE_ADMIN_PANEL_URL || '/admin'
@@ -97,9 +97,9 @@ interface Props {
 export function CheckoutModal({ initialPlan, onClose }: Props) {
   // Pasos del flujo principal:
   // 0: Selección de Plan (si se abrió sin plan previo)
-  // 1: Paso 1 - Registro de Cuenta (Nombre, Email, Contraseña, Confirmar Contraseña)
-  // 2: Paso 2 - Datos Fiscales Previos al Pago (RUC opcional y Razón Social)
-  // 3: Paso 3 - Pasarela de Pago (Tarjeta / Yape o Transferencia)
+  // 1: Paso 1 - Registro de Cuenta (Nombre, Email, Contraseña fuerte dinámica, Confirmar Contraseña)
+  // 2: Paso 2 - Datos Fiscales Previos al Pago (RUC opcional y Razón Social readOnly vía SUNAT)
+  // 3: Paso 3 - Pasarela de Pago Culqi Simulada (Tarjeta / Yape)
   // 4: Paso 4 - Ticket Post-Pago y Comprobante Condicional
   const [currentPlan, setCurrentPlan] = useState<Plan>(initialPlan || 'growth')
   const [step, setStep] = useState<number>(initialPlan ? 1 : 0)
@@ -108,6 +108,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
   // Ciclo de validaciones reactivas: ningún campo muestra error en estado pristine
   const [dirty, setDirty] = useState<Record<string, boolean>>({})
   const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [passwordFocused, setPasswordFocused] = useState(false)
 
   // Estados de sesión y verificación de correo
   const [userId, setUserId] = useState<string | null>(null)
@@ -121,6 +122,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
   const [verifiedDoc, setVerifiedDoc] = useState(false)
   const [rucAvailable, setRucAvailable] = useState<boolean | null>(null)
   const [docFeedback, setDocFeedback] = useState('')
+  const [docFeedbackError, setDocFeedbackError] = useState(false)
   const [hadPrePaymentRuc, setHadPrePaymentRuc] = useState(false)
 
   // Estados de pasarela (Paso 3) y ticket (Paso 4)
@@ -133,6 +135,9 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
   const [invoiceDoc, setInvoiceDoc] = useState('')
   const [invoiceName, setInvoiceName] = useState('')
   const [invoiceEmail, setInvoiceEmail] = useState('')
+  const [searchingInvoiceDoc, setSearchingInvoiceDoc] = useState(false)
+  const [invoiceDocFeedback, setInvoiceDocFeedback] = useState('')
+  const [invoiceDocFeedbackError, setInvoiceDocFeedbackError] = useState(false)
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false)
   const [invoiceEmitted, setInvoiceEmitted] = useState<{
     type: 'boleta' | 'factura'
@@ -184,7 +189,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
      VALIDACIONES REACTIVAS Y DINÁMICAS POR PASO
   ────────────────────────────────────────────────────────── */
 
-  // PASO 1: Registro de Cuenta
+  // PASO 1: Registro de Cuenta y Política de Contraseña Fuerte Dinámica
   const cleanNameLetters = form.name.replace(/\s+/g, '')
   const nameValid = cleanNameLetters.length >= 3 && ALPHA_NAME_REGEX.test(form.name.trim())
 
@@ -205,49 +210,78 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
     return 'Estructura de correo inválida según formato RFC 5322.'
   }
 
-  const passLength = form.password.length >= 8
-  const passNumOrSpecial = /[0-9!@#$%^&*(),.?":{}|<>_\-+=/\\[\]~`]/.test(form.password)
-  const passwordValid = passLength && passNumOrSpecial
+  const passRuleLength = form.password.length >= 8
+  const passRuleUpper = /[A-ZÁÉÍÓÚÑ]/.test(form.password)
+  const passRuleNumber = /[0-9]/.test(form.password)
+  const passRuleSymbol = /[@$!%*?&#._\-+=/\\[\]~(),.?:{}|<>^]/.test(form.password)
+
+  const passwordRules = [
+    { id: 'length', label: 'Mínimo 8 caracteres', met: passRuleLength },
+    { id: 'upper', label: 'Al menos una letra mayúscula', met: passRuleUpper },
+    { id: 'number', label: 'Al menos un número', met: passRuleNumber },
+    { id: 'symbol', label: 'Al menos un símbolo (@$!%*?&#)', met: passRuleSymbol }
+  ]
+  const pendingPasswordRules = passwordRules.filter(r => !r.met)
+  const passwordValid = pendingPasswordRules.length === 0
   const confirmPasswordValid = form.confirmPassword.length > 0 && form.confirmPassword === form.password
 
   const step1Valid = nameValid && emailValid && passwordValid && confirmPasswordValid
 
   // PASO 2: Datos Fiscales Previos al Pago (RUC opcional)
-  const rucStartsValid = /^(10|20)/.test(form.document)
-  const rucValid = form.document.length === 11 && /^(10|20)\d{9}$/.test(form.document)
-  const rucHasErrorOnBlur =
-    Boolean(touched.document) &&
-    (form.document.length !== 11 || !rucStartsValid || rucAvailable === false)
+  const rucValid = /^(10|20)\d{9}$/.test(form.document)
+  const rucPrefixInvalidWhileTyping =
+    (form.document.length === 1 && !/^[12]$/.test(form.document)) ||
+    (form.document.length >= 2 && !/^(10|20)/.test(form.document))
 
-  const businessNameValid = form.businessName.trim().length >= 3
-  // Si el usuario ingresó RUC válido, la Razón Social es obligatoria; si dejó el RUC vacío, es opcional
+  const rucModifiedAndInvalid =
+    Boolean(dirty.document) &&
+    form.document.length > 0 &&
+    (rucPrefixInvalidWhileTyping || (Boolean(touched.document) && !rucValid))
+
+  const rucHasError = rucModifiedAndInvalid || rucAvailable === false
+  const businessNameValid = verifiedDoc && form.businessName.trim().length >= 3
+
+  // Si el usuario no ingresó RUC, puede continuar; si ingresó RUC, debe estar verificado con su Razón Social
   const step2Valid =
     form.document.length === 0
       ? true
       : rucValid && rucAvailable !== false && businessNameValid
 
-  // PASO 3: Pasarela de Pago
+  // PASO 3: Pasarela de Pago (Culqi Simulada)
+  const isAmex = /^3[47]/.test(form.card)
+  const expectedCvvLength = isAmex ? 4 : 3
   const cardNumberValid = /^\d{16}$/.test(form.card)
   const cardHolderClean = form.cardHolder.replace(/\s+/g, '')
   const cardHolderValid =
     cardHolderClean.length >= 3 && ALPHA_NAME_REGEX.test(form.cardHolder.trim())
 
   const expiryFormatValid = /^(0[1-9]|1[0-2])\/\d{2}$/.test(form.expiry)
-  const expiryNotExpired = (() => {
-    if (!expiryFormatValid) return false
+  const expiryRangeEvaluation = (() => {
+    if (!expiryFormatValid) return { valid: false, reason: 'format' as const }
     const [m, y] = form.expiry.split('/').map(Number)
     const now = new Date()
     const currentYear = now.getFullYear() % 100
     const currentMonth = now.getMonth() + 1
-    return y > currentYear || (y === currentYear && m >= currentMonth)
+    const maxYear = currentYear + 5
+
+    if (y < currentYear || (y === currentYear && m < currentMonth)) {
+      return { valid: false, reason: 'expired' as const }
+    }
+    if (y > maxYear) {
+      return { valid: false, reason: 'max_range' as const }
+    }
+    return { valid: true, reason: 'ok' as const }
   })()
-  const expiryValid = expiryFormatValid && expiryNotExpired
+  const expiryValid = expiryRangeEvaluation.valid
 
-  const cvvValid = /^\d{3,4}$/.test(form.cvv)
-  const cardPaymentValid = cardNumberValid && cardHolderValid && expiryValid && cvvValid
+  const cvvValid = isAmex ? /^\d{4}$/.test(form.cvv) : /^\d{3}$/.test(form.cvv)
+  const cardPaymentValid = cardNumberValid && expiryValid && cvvValid && cardHolderValid
 
-  const yapeOtpValid = /^\d{6,12}$/.test(form.otp)
-  const step3Valid = method === 'card' ? cardPaymentValid : yapeOtpValid
+  const yapePhoneValid = /^9\d{8}$/.test(form.phone)
+  const yapeOtpValid = /^\d{6}$/.test(form.otp)
+  const yapePaymentValid = yapePhoneValid && yapeOtpValid
+
+  const step3Valid = method === 'card' ? cardPaymentValid : yapePaymentValid
 
   // PASO 4 (Caso B): Comprobante Condicional Inline
   const expectedInvoiceDocDigits = invoiceType === 'boleta' ? 8 : 11
@@ -255,8 +289,8 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
     invoiceType === 'boleta'
       ? /^\d{8}$/.test(invoiceDoc)
       : /^(10|20)\d{9}$/.test(invoiceDoc)
-  const invoiceDocErrorOnBlur =
-    Boolean(touched.invoiceDoc) && !invoiceDocValid
+  const invoiceDocInvalid =
+    hasInteracted('invoiceDoc') && invoiceDoc.length > 0 && !invoiceDocValid
   const invoiceNameValid = invoiceName.trim().length >= 3
   const invoiceEmailValid = RFC5322_EMAIL_REGEX.test(invoiceEmail.trim())
   const invoiceFormValid = invoiceDocValid && invoiceNameValid && invoiceEmailValid
@@ -314,7 +348,6 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
           setAwaitingEmailConfirmation(false)
           setStep(2)
         } else {
-          // Avanzamos al Paso 2 (Datos Fiscales) permitiendo continuar fluido
           setStep(2)
         }
       }
@@ -363,12 +396,16 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
   async function handleSearchRuc() {
     markTouched('document')
     if (!rucValid) {
-      setDocFeedback('El RUC debe tener 11 dígitos numéricos e iniciar con 10 o 20.')
+      setVerifiedDoc(false)
+      setForm(prev => ({ ...prev, businessName: '' }))
+      setDocFeedbackError(true)
+      setDocFeedback('Debe tener 11 dígitos numéricos e iniciar con 10 o 20')
       return
     }
 
     setSearchingDoc(true)
     setDocFeedback('')
+    setDocFeedbackError(false)
     setErrorMessage(null)
 
     try {
@@ -376,26 +413,74 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
       if (!isAvailable) {
         setVerifiedDoc(false)
         setRucAvailable(false)
+        setForm(prev => ({ ...prev, businessName: '' }))
+        setDocFeedbackError(true)
         setDocFeedback('Este RUC ya se encuentra registrado en el sistema.')
         return
       }
 
       setRucAvailable(true)
       const res = await buscarDocumentoFiscal(form.document)
-      update('businessName', res.nombre)
-      markTouched('businessName')
+      setForm(prev => ({ ...prev, businessName: res.nombre }))
       setVerifiedDoc(true)
+      setDocFeedbackError(false)
       if (form.document === RUC_DEMO) {
-        setDocFeedback(`✓ RUC de Prueba UTP detectado: ${res.nombre}`)
+        setDocFeedback(`✓ RUC de Prueba UTP verificado: ${res.nombre}`)
       } else {
-        setDocFeedback(`✓ Razón social verificada ante SUNAT: ${res.nombre}`)
+        setDocFeedback(`✓ Razón social verificada en SUNAT: ${res.nombre}`)
       }
     } catch (err: unknown) {
       setVerifiedDoc(false)
-      const msg = err instanceof Error ? err.message : 'No se pudo consultar el RUC ingresado.'
+      setForm(prev => ({ ...prev, businessName: '' }))
+      setDocFeedbackError(true)
+      const msg = err instanceof Error ? err.message : 'No se encontró el RUC en el padrón SUNAT.'
       setDocFeedback(msg)
     } finally {
       setSearchingDoc(false)
+    }
+  }
+
+  // Paso 4 (Caso B): Búsqueda de DNI (RENIEC) o RUC (SUNAT) en acordeón de comprobante
+  async function handleSearchInvoiceDoc() {
+    markTouched('invoiceDoc')
+    if (!invoiceDocValid) {
+      setInvoiceName('')
+      setInvoiceDocFeedbackError(true)
+      setInvoiceDocFeedback(
+        invoiceType === 'boleta'
+          ? 'Ingresa un DNI válido de 8 dígitos numéricos.'
+          : 'Debe tener 11 dígitos numéricos e iniciar con 10 o 20.'
+      )
+      return
+    }
+
+    setSearchingInvoiceDoc(true)
+    setInvoiceDocFeedback('')
+    setInvoiceDocFeedbackError(false)
+
+    try {
+      const res = await buscarDocumentoFiscal(invoiceDoc)
+      setInvoiceName(res.nombre)
+      setInvoiceDocFeedbackError(false)
+      if (invoiceDoc === RUC_DEMO || invoiceDoc === DNI_DEMO) {
+        setInvoiceDocFeedback(`✓ Documento de prueba verificado: ${res.nombre}`)
+      } else {
+        setInvoiceDocFeedback(
+          invoiceType === 'boleta'
+            ? `✓ Identidad verificada en RENIEC`
+            : `✓ Razón social verificada en SUNAT`
+        )
+      }
+    } catch (err: unknown) {
+      setInvoiceName('')
+      setInvoiceDocFeedbackError(true)
+      const msg =
+        err instanceof Error
+          ? err.message
+          : 'No se pudo verificar el documento ingresado.'
+      setInvoiceDocFeedback(msg)
+    } finally {
+      setSearchingInvoiceDoc(false)
     }
   }
 
@@ -405,9 +490,11 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
     setErrorMessage(null)
 
     const effectiveRuc =
-      (withPreRuc ?? rucValid) && rucValid ? form.document : undefined
+      (withPreRuc ?? (rucValid && verifiedDoc)) && rucValid && verifiedDoc
+        ? form.document
+        : undefined
     const cleanBusiness =
-      form.businessName.trim() ||
+      (effectiveRuc ? form.businessName.trim() : '') ||
       form.name.trim() ||
       form.email.split('@')[0].toUpperCase()
 
@@ -448,7 +535,8 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
       const hasValidPreRuc = Boolean(effectiveRuc)
       setHadPrePaymentRuc(hasValidPreRuc)
       setInvoiceEmail(form.email.trim())
-      setInvoiceName(form.name.trim())
+      setInvoiceName('')
+      setInvoiceDoc('')
       setResult(tx)
       setStep(4)
 
@@ -464,7 +552,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
           ? {
               type: 'factura',
               document_number: effectiveRuc!,
-              business_name: cleanBusiness
+              business_name: form.businessName.trim()
             }
           : undefined,
         app_url: ADMIN_URL
@@ -481,7 +569,6 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
   async function handleEmitInvoice(e: React.FormEvent) {
     e.preventDefault()
     markTouched('invoiceDoc')
-    markTouched('invoiceName')
     markTouched('invoiceEmail')
     if (!invoiceFormValid || !result) return
 
@@ -611,7 +698,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
               </div>
             </section>
           ) : step === 0 ? (
-            /* PASO 0: SELECTOR DE PLAN */
+            /* 1. PASO 0: SELECTOR DE PLANES */
             <section className="space-y-3">
               <h3 className="text-lg font-semibold tracking-tight text-slate-900 dark:text-white">
                 Selecciona tu Plan
@@ -637,20 +724,20 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                       </span>
                     )}
                     <div className="flex items-center justify-between gap-3">
-                      <div>
-                        <p className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
-                          {p.name}
+                      <div className="min-w-0 flex-1">
+                        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                          <span>{p.name}</span>
                           {p.id === 'growth' && (
                             <span className="rounded-[5px] bg-emerald-600 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider text-white">
                               RECOMENDADO
                             </span>
                           )}
                         </p>
-                        <p className="text-xs text-slate-500">{p.description}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{p.description}</p>
                       </div>
-                      <span className="font-mono text-sm font-semibold text-slate-900 dark:text-white">
+                      <div className="min-w-[90px] shrink-0 text-right font-mono text-sm font-semibold text-slate-900 dark:text-white">
                         {p.price === 0 ? 'S/ 0' : `S/ ${p.price}/mes`}
-                      </span>
+                      </div>
                     </div>
                   </div>
                 )
@@ -664,7 +751,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
               </button>
             </section>
           ) : step === 1 ? (
-            /* PASO 1: REGISTRO DE CUENTA */
+            /* 2. PASO 1: REGISTRO DE CUENTA Y POLÍTICA DE CONTRASEÑA */
             <form onSubmit={handleRegister} noValidate>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                 Paso 1 · Registro de Cuenta
@@ -673,7 +760,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 Configura las credenciales del administrador principal del comercio.
               </p>
 
-              {/* Nombre */}
+              {/* Nombre Completo */}
               <div className="mt-4">
                 <label className="field-label">Nombre Completo</label>
                 <input
@@ -715,22 +802,33 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 )}
               </div>
 
-              {/* Contraseña */}
+              {/* Contraseña Fuerte Dinámica */}
               <div className="mt-3.5">
                 <label className="field-label">Contraseña</label>
                 <input
                   type="password"
                   required
                   value={form.password}
+                  onFocus={() => setPasswordFocused(true)}
                   onChange={e => update('password', e.target.value)}
                   onBlur={() => markTouched('password')}
-                  placeholder="Mínimo 8 caracteres, 1 número o símbolo"
+                  placeholder="Crea una contraseña segura"
                   className={getFieldClass('password', passwordValid)}
                 />
-                {hasInteracted('password') && !passwordValid && (
-                  <p className="mt-1 text-[11px] text-rose-500">
-                    La contraseña requiere mínimo 8 caracteres y al menos 1 número o carácter especial.
-                  </p>
+
+                {/* Lista reactiva en 2 columnas al hacer foco; cada regla desaparece al cumplirse */}
+                {(passwordFocused || hasInteracted('password')) && pendingPasswordRules.length > 0 && (
+                  <div className="mt-2 grid grid-cols-2 gap-1.5 rounded-[5px] border border-slate-200 bg-slate-50 p-2.5 text-[11px] text-slate-600 transition-all duration-200 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300">
+                    {pendingPasswordRules.map(rule => (
+                      <div
+                        key={rule.id}
+                        className="flex items-center gap-1.5 transition-all duration-200"
+                      >
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-[5px] bg-amber-500" />
+                        <span>{rule.label}</span>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
 
@@ -759,24 +857,6 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 )}
               </div>
 
-              {/* Indicadores de seguridad de contraseña */}
-              <div className="mt-3.5 grid grid-cols-2 gap-1.5 rounded-[5px] border border-slate-200 bg-slate-50 p-2.5 font-mono text-[11px] dark:border-slate-800 dark:bg-slate-800/40">
-                <div
-                  className={`flex items-center gap-1.5 ${
-                    passLength ? 'font-medium text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
-                  }`}
-                >
-                  <Check size={12} /> 8+ caracteres
-                </div>
-                <div
-                  className={`flex items-center gap-1.5 ${
-                    passNumOrSpecial ? 'font-medium text-emerald-600 dark:text-emerald-400' : 'text-slate-400'
-                  }`}
-                >
-                  <Check size={12} /> 1+ número o símbolo
-                </div>
-              </div>
-
               <div className="mt-6 flex gap-2">
                 {!initialPlan && (
                   <button
@@ -797,13 +877,13 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
               </div>
             </form>
           ) : step === 2 ? (
-            /* PASO 2: DATOS FISCALES PREVIOS AL PAGO (RUC OPCIONAL) */
+            /* 3. PASO 2: DATOS FISCALES PREVIOS (RUC OPCIONAL) */
             <section>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                 Paso 2 · Datos Fiscales Previos al Pago
               </h3>
               <p className="mt-1 text-xs text-slate-500">
-                Ingresa tu RUC si deseas emitir Factura Electrónica automáticamente. Este paso es opcional.
+                Consulta tu RUC si deseas emitir Factura Electrónica automáticamente. Este paso es opcional.
               </p>
 
               <div className="mt-4">
@@ -815,16 +895,18 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                     value={form.document}
                     onChange={e => {
                       update('document', onlyNumbers(e.target.value, 11))
+                      setForm(prev => ({ ...prev, businessName: '' }))
                       setVerifiedDoc(false)
                       setRucAvailable(null)
                       setDocFeedback('')
+                      setDocFeedbackError(false)
                     }}
                     onBlur={() => markTouched('document')}
                     placeholder="Ej: 20601234567 o 10456789012"
                     className={`field rounded-[5px] font-mono ${
-                      rucHasErrorOnBlur
+                      rucHasError || docFeedbackError
                         ? 'border-rose-500 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 dark:border-rose-500'
-                        : rucValid
+                        : rucValid && verifiedDoc
                           ? 'border-emerald-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-500'
                           : 'border-slate-300 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700'
                     }`}
@@ -840,66 +922,48 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   </button>
                 </div>
 
-                {/* Contador dinámico en JetBrains Mono */}
-                <div className="mt-1.5 flex items-center justify-between gap-2 font-mono text-[11px]">
-                  <span
-                    className={
-                      rucHasErrorOnBlur
-                        ? 'text-rose-500 font-semibold'
-                        : rucValid
-                          ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                          : 'text-slate-400'
-                    }
-                  >
-                    [ {form.document.length} / 11 dígitos ]
-                  </span>
-                  {rucHasErrorOnBlur && (
-                    <span className="text-right text-rose-500">
-                      {rucAvailable === false
-                        ? 'RUC ya registrado'
-                        : 'Debe tener 11 dígitos e iniciar con 10 o 20'}
-                    </span>
+                {/* Único mensaje dinámico en el lado izquierdo debajo del input */}
+                <div className="mt-1.5 text-left">
+                  {rucModifiedAndInvalid ? (
+                    <p className="text-[11px] text-rose-500">
+                      Debe tener 11 dígitos numéricos e iniciar con 10 o 20
+                    </p>
+                  ) : docFeedback ? (
+                    <p
+                      className={`font-mono text-[11px] ${
+                        docFeedbackError
+                          ? 'text-rose-500'
+                          : 'text-emerald-600 dark:text-emerald-400'
+                      }`}
+                    >
+                      {docFeedback}
+                    </p>
+                  ) : (
+                    <p className="font-mono text-[11px] text-slate-400">
+                      {form.document.length} / 11
+                    </p>
                   )}
                 </div>
-
-                {docFeedback && (
-                  <p
-                    className={`mt-1.5 font-mono text-xs ${
-                      rucAvailable === false
-                        ? 'text-rose-500'
-                        : verifiedDoc
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-amber-600'
-                    }`}
-                  >
-                    {docFeedback}
-                  </p>
-                )}
               </div>
 
               <div className="mt-4">
                 <label className="field-label">
-                  Razón Social {rucValid && <span className="text-rose-500">*</span>}
+                  Razón Social (Verificación SUNAT)
                 </label>
                 <input
                   type="text"
+                  readOnly
                   value={form.businessName}
-                  onChange={e => update('businessName', e.target.value)}
-                  onBlur={() => markTouched('businessName')}
-                  placeholder={
-                    rucValid
-                      ? 'Ingresa o consulta la Razón Social en SUNAT'
-                      : 'Opcional si no requieres factura ahora'
-                  }
-                  className={
-                    rucValid
-                      ? getFieldClass('businessName', businessNameValid)
-                      : 'field rounded-[5px] border-slate-300 dark:border-slate-700'
-                  }
+                  placeholder="Pulsa la lupa para autocompletar desde SUNAT"
+                  className={`field cursor-not-allowed rounded-[5px] bg-slate-100 text-slate-700 dark:bg-slate-800/70 dark:text-slate-300 ${
+                    verifiedDoc
+                      ? 'border-emerald-500 dark:border-emerald-500'
+                      : 'border-slate-300 dark:border-slate-700'
+                  }`}
                 />
-                {rucValid && hasInteracted('businessName') && !businessNameValid && (
-                  <p className="mt-1 text-[11px] text-rose-500">
-                    La Razón Social es obligatoria cuando el RUC es válido (mínimo 3 caracteres).
+                {rucValid && !verifiedDoc && !searchingDoc && (
+                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                    Haz clic en el botón de búsqueda (lupa) para validar la Razón Social en SUNAT.
                   </p>
                 )}
               </div>
@@ -917,7 +981,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   disabled={!step2Valid || loading}
                   onClick={() => {
                     if (isTrial) {
-                      void handleFinalizeProvisioning(rucValid)
+                      void handleFinalizeProvisioning(rucValid && verifiedDoc)
                     } else {
                       setStep(3)
                     }
@@ -939,8 +1003,11 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   type="button"
                   onClick={() => {
                     setForm(prev => ({ ...prev, document: '', businessName: '' }))
-                    setTouched(prev => ({ ...prev, document: false, businessName: false }))
+                    setDirty(prev => ({ ...prev, document: false }))
+                    setTouched(prev => ({ ...prev, document: false }))
+                    setVerifiedDoc(false)
                     setDocFeedback('')
+                    setDocFeedbackError(false)
                     setStep(3)
                   }}
                   className="mt-3 block w-full rounded-[5px] py-1.5 text-center text-xs text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
@@ -950,7 +1017,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
               )}
             </section>
           ) : step === 3 ? (
-            /* PASO 3: PASARELA DE PAGO */
+            /* 4. PASO 3: PASARELA DE PAGO (INTEGRACIÓN CULQI SIMULADA) */
             <section>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
                 Paso 3 · Pasarela de Pago
@@ -981,64 +1048,44 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                       : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
                   }`}
                 >
-                  <Smartphone size={15} /> Yape / Transferencia
+                  <Smartphone size={15} /> Yape
                 </button>
               </div>
 
               {method === 'card' ? (
                 <div className="mt-4 space-y-3.5">
-                  {/* Número de tarjeta */}
+                  {/* 1. Número de Tarjeta */}
                   <div>
                     <label className="field-label">Número de Tarjeta</label>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={form.card.replace(/(\d{4})(?=\d)/g, '$1 ')}
-                      onChange={e => update('card', onlyNumbers(e.target.value, 16))}
+                      onChange={e => {
+                        const nextCard = onlyNumbers(e.target.value, 16)
+                        const nextIsAmex = /^3[47]/.test(nextCard)
+                        setDirty(prev => ({ ...prev, card: true }))
+                        setForm(prev => ({
+                          ...prev,
+                          card: nextCard,
+                          cvv: prev.cvv.slice(0, nextIsAmex ? 4 : 3)
+                        }))
+                      }}
                       onBlur={() => markTouched('card')}
                       placeholder="4111 1111 1111 1111"
                       className={getFieldClass('card', cardNumberValid, 'font-mono')}
                     />
-                    <div className="mt-1 flex items-center justify-between font-mono text-[11px]">
-                      <span
-                        className={
-                          !hasInteracted('card')
-                            ? 'text-slate-400'
-                            : cardNumberValid
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-rose-500'
-                        }
-                      >
-                        [ {form.card.length} / 16 dígitos ]
-                      </span>
-                      {hasInteracted('card') && !cardNumberValid && (
-                        <span className="text-rose-500">Ingresa los 16 dígitos numéricos</span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Nombre del titular */}
-                  <div>
-                    <label className="field-label">Nombre del Titular</label>
-                    <input
-                      type="text"
-                      value={form.cardHolder}
-                      onChange={e => update('cardHolder', onlyAlphabetic(e.target.value))}
-                      onBlur={() => markTouched('cardHolder')}
-                      placeholder="Como figura en la tarjeta"
-                      className={getFieldClass('cardHolder', cardHolderValid)}
-                    />
-                    {hasInteracted('cardHolder') && !cardHolderValid && (
-                      <p className="mt-1 text-[11px] text-rose-500">
-                        Ingresa el nombre alfabético del titular (mínimo 3 letras).
+                    {hasInteracted('card') && !cardNumberValid && (
+                      <p className="mt-1 text-left text-[11px] text-rose-500">
+                        Ingresa los 16 dígitos de tu tarjeta
                       </p>
                     )}
                   </div>
 
-                  {/* Expiración y CVV */}
+                  {/* 2. Fila doble: Fecha de Expiración y Código de Seguridad (CVV) */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="field-label">Expiración (MM/AA)</label>
+                      <label className="field-label">Fecha de Expiración</label>
                       <input
                         type="text"
                         inputMode="numeric"
@@ -1050,85 +1097,105 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                           )
                         }
                         onBlur={() => markTouched('expiry')}
-                        placeholder="08/28"
+                        placeholder="MM/AA"
                         className={getFieldClass('expiry', expiryValid, 'font-mono')}
                       />
                       {hasInteracted('expiry') && !expiryValid && (
-                        <p className="mt-1 text-[11px] text-rose-500">
-                          {!expiryFormatValid
-                            ? 'Usa formato MM/AA (mes 01-12).'
-                            : 'La tarjeta figura vencida.'}
+                        <p className="mt-1 text-left text-[11px] text-rose-500">
+                          {expiryRangeEvaluation.reason === 'format'
+                            ? 'Formato MM/AA (mes 01-12).'
+                            : expiryRangeEvaluation.reason === 'expired'
+                              ? 'La tarjeta figura vencida.'
+                              : 'Año fuera del rango permitido (máx. +5 años).'}
                         </p>
                       )}
                     </div>
                     <div>
-                      <label className="field-label">CVV</label>
+                      <label className="field-label">Código de Seguridad (CVV)</label>
                       <input
                         type="text"
                         inputMode="numeric"
-                        maxLength={4}
+                        maxLength={expectedCvvLength}
                         value={form.cvv}
-                        onChange={e => update('cvv', onlyNumbers(e.target.value, 4))}
+                        onChange={e => update('cvv', onlyNumbers(e.target.value, expectedCvvLength))}
                         onBlur={() => markTouched('cvv')}
-                        placeholder="123"
+                        placeholder={isAmex ? '4 dígitos' : '123'}
                         className={getFieldClass('cvv', cvvValid, 'font-mono')}
                       />
                       {hasInteracted('cvv') && !cvvValid && (
-                        <p className="mt-1 text-[11px] text-rose-500">CVV de 3 o 4 dígitos.</p>
+                        <p className="mt-1 text-left text-[11px] text-rose-500">
+                          {isAmex ? 'Ingresa los 4 dígitos Amex.' : 'Ingresa los 3 dígitos del CVV.'}
+                        </p>
                       )}
                     </div>
+                  </div>
+
+                  {/* 3. Nombre del Titular (al final de la sección de tarjeta) */}
+                  <div>
+                    <label className="field-label">Nombre del Titular</label>
+                    <input
+                      type="text"
+                      value={form.cardHolder}
+                      onChange={e => update('cardHolder', onlyAlphabetic(e.target.value))}
+                      onBlur={() => markTouched('cardHolder')}
+                      placeholder="Como figura en la tarjeta"
+                      className={getFieldClass('cardHolder', cardHolderValid)}
+                    />
+                    {hasInteracted('cardHolder') && !cardHolderValid && (
+                      <p className="mt-1 text-left text-[11px] text-rose-500">
+                        Ingresa el nombre alfabético del titular (mínimo 3 letras).
+                      </p>
+                    )}
                   </div>
                 </div>
               ) : (
                 <div className="mt-4 space-y-3.5">
-                  <div className="rounded-[5px] border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-slate-700 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-slate-300">
+                  {/* Banner superior Culqi Yape */}
+                  <div className="rounded-[5px] border border-emerald-200 bg-emerald-50/70 p-3 text-xs text-slate-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-slate-200">
                     <p className="font-semibold text-slate-900 dark:text-white">
-                      Pago rápido por Yape o Transferencia Bancaria
+                      Pago mediante código de aprobación Yape (Culqi)
                     </p>
                     <p className="mt-0.5 text-[11px] text-slate-600 dark:text-slate-400">
-                      Realiza el abono por <strong className="font-mono">S/ {selectedPlan.price}.00</strong> e ingresa el código numérico de operación para validar tu suscripción.
+                      Genera tu código temporal de 6 dígitos desde el menú de compras por internet en tu app Yape.
                     </p>
                   </div>
 
+                  {/* 1. Número de Celular Yape */}
                   <div>
-                    <label className="field-label">Código de Operación (Mínimo 6 dígitos)</label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      value={form.otp}
-                      onChange={e => update('otp', onlyNumbers(e.target.value, 12))}
-                      onBlur={() => markTouched('otp')}
-                      placeholder="Ej. 148920"
-                      className={getFieldClass('otp', yapeOtpValid, 'font-mono')}
-                    />
-                    <div className="mt-1 flex items-center justify-between font-mono text-[11px]">
-                      <span
-                        className={
-                          !hasInteracted('otp')
-                            ? 'text-slate-400'
-                            : yapeOtpValid
-                              ? 'text-emerald-600 dark:text-emerald-400'
-                              : 'text-rose-500'
-                        }
-                      >
-                        [ {form.otp.length} / mín. 6 dígitos ]
-                      </span>
-                      {hasInteracted('otp') && !yapeOtpValid && (
-                        <span className="text-rose-500">Obligatorio: mínimo 6 dígitos numéricos</span>
-                      )}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="field-label">Celular de contacto / Yape (Opcional)</label>
+                    <label className="field-label">Número de Celular Yape</label>
                     <input
                       type="text"
                       inputMode="numeric"
                       value={form.phone}
                       onChange={e => update('phone', onlyNumbers(e.target.value, 9))}
+                      onBlur={() => markTouched('phone')}
                       placeholder="987654321"
-                      className="field rounded-[5px] font-mono"
+                      className={getFieldClass('phone', yapePhoneValid, 'font-mono')}
                     />
+                    {hasInteracted('phone') && !yapePhoneValid && (
+                      <p className="mt-1 text-left text-[11px] text-rose-500">
+                        Ingresa los 9 dígitos numéricos iniciando con 9.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* 2. Código de Aprobación */}
+                  <div>
+                    <label className="field-label">Código de Aprobación</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={form.otp}
+                      onChange={e => update('otp', onlyNumbers(e.target.value, 6))}
+                      onBlur={() => markTouched('otp')}
+                      placeholder="6 dígitos de tu app Yape"
+                      className={getFieldClass('otp', yapeOtpValid, 'font-mono')}
+                    />
+                    {hasInteracted('otp') && !yapeOtpValid && (
+                      <p className="mt-1 text-left text-[11px] text-rose-500">
+                        Ingresa exactamente los 6 dígitos numéricos del código de aprobación.
+                      </p>
+                    )}
                   </div>
                 </div>
               )}
@@ -1156,7 +1223,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
               </div>
             </section>
           ) : (
-            /* PASO 4: TICKET POST-PAGO Y COMPROBANTE CONDICIONAL */
+            /* 5. PASO 4: TICKET POST-PAGO Y COMPROBANTE CONDICIONAL */
             result && (
               <section className="py-1">
                 <div className="text-center">
@@ -1280,7 +1347,11 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                 type="button"
                                 onClick={() => {
                                   setInvoiceType('boleta')
-                                  setInvoiceDoc(prev => prev.slice(0, 8))
+                                  setInvoiceDoc('')
+                                  setInvoiceName('')
+                                  setInvoiceDocFeedback('')
+                                  setInvoiceDocFeedbackError(false)
+                                  setDirty(prev => ({ ...prev, invoiceDoc: false }))
                                   setTouched(prev => ({ ...prev, invoiceDoc: false }))
                                 }}
                                 className={`rounded-[5px] py-1.5 text-xs font-semibold transition-all ${
@@ -1295,6 +1366,11 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                 type="button"
                                 onClick={() => {
                                   setInvoiceType('factura')
+                                  setInvoiceDoc('')
+                                  setInvoiceName('')
+                                  setInvoiceDocFeedback('')
+                                  setInvoiceDocFeedbackError(false)
+                                  setDirty(prev => ({ ...prev, invoiceDoc: false }))
                                   setTouched(prev => ({ ...prev, invoiceDoc: false }))
                                 }}
                                 className={`rounded-[5px] py-1.5 text-xs font-semibold transition-all ${
@@ -1307,76 +1383,101 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                               </button>
                             </div>
 
-                            {/* Documento con contador dinámico */}
+                            {/* Documento con botón de búsqueda (lupa) integrado */}
                             <div>
                               <label className="field-label">
                                 {invoiceType === 'boleta' ? 'Número de DNI' : 'Número de RUC'}
                               </label>
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={invoiceDoc}
-                                onChange={e => {
-                                  markDirty('invoiceDoc')
-                                  setInvoiceDoc(onlyNumbers(e.target.value, expectedInvoiceDocDigits))
-                                }}
-                                onBlur={() => markTouched('invoiceDoc')}
-                                placeholder={
-                                  invoiceType === 'boleta' ? '8 dígitos numéricos' : '11 dígitos (10 o 20...)'
-                                }
-                                className={`field rounded-[5px] font-mono ${
-                                  invoiceDocErrorOnBlur
-                                    ? 'border-rose-500 focus:border-rose-500'
-                                    : invoiceDocValid
-                                      ? 'border-emerald-500 focus:border-emerald-600'
-                                      : 'border-slate-300 dark:border-slate-700'
-                                }`}
-                              />
-                              <div className="mt-1 flex items-center justify-between font-mono text-[11px]">
-                                <span
-                                  className={
-                                    invoiceDocErrorOnBlur
-                                      ? 'text-rose-500 font-semibold'
-                                      : invoiceDocValid
-                                        ? 'text-emerald-600 dark:text-emerald-400 font-semibold'
-                                        : 'text-slate-400'
+                              <div className="flex gap-2">
+                                <input
+                                  type="text"
+                                  inputMode="numeric"
+                                  value={invoiceDoc}
+                                  onChange={e => {
+                                    markDirty('invoiceDoc')
+                                    setInvoiceDoc(onlyNumbers(e.target.value, expectedInvoiceDocDigits))
+                                    setInvoiceName('')
+                                    setInvoiceDocFeedback('')
+                                    setInvoiceDocFeedbackError(false)
+                                  }}
+                                  onBlur={() => markTouched('invoiceDoc')}
+                                  placeholder={
+                                    invoiceType === 'boleta'
+                                      ? '8 dígitos numéricos'
+                                      : '11 dígitos (10 o 20...)'
+                                  }
+                                  className={`field rounded-[5px] font-mono ${
+                                    invoiceDocInvalid || invoiceDocFeedbackError
+                                      ? 'border-rose-500 focus:border-rose-500'
+                                      : invoiceDocValid && invoiceNameValid
+                                        ? 'border-emerald-500 focus:border-emerald-600'
+                                        : 'border-slate-300 dark:border-slate-700'
+                                  }`}
+                                />
+                                <button
+                                  type="button"
+                                  disabled={searchingInvoiceDoc || !invoiceDocValid}
+                                  onClick={handleSearchInvoiceDoc}
+                                  className="btn-secondary grid w-12 shrink-0 place-items-center rounded-[5px] disabled:opacity-40"
+                                  title={
+                                    invoiceType === 'boleta'
+                                      ? 'Consultar DNI en RENIEC'
+                                      : 'Consultar RUC en SUNAT'
                                   }
                                 >
-                                  [ {invoiceDoc.length} / {expectedInvoiceDocDigits} dígitos ]
-                                </span>
-                                {invoiceDocErrorOnBlur && (
-                                  <span className="text-rose-500">
-                                    {invoiceType === 'boleta'
-                                      ? 'DNI requiere 8 dígitos'
-                                      : 'RUC requiere 11 dígitos (10 o 20)'}
-                                  </span>
-                                )}
+                                  {searchingInvoiceDoc ? (
+                                    <Loader2 className="animate-spin" size={16} />
+                                  ) : (
+                                    <Search size={16} />
+                                  )}
+                                </button>
                               </div>
+
+                              {/* Micro-texto descriptivo dinámico a la izquierda solo cuando es inválido o feedback */}
+                              {invoiceDocInvalid ? (
+                                <p className="mt-1 text-left text-[11px] text-rose-500">
+                                  {invoiceType === 'boleta'
+                                    ? 'Ingresa un DNI válido de 8 dígitos numéricos.'
+                                    : 'Debe tener 11 dígitos numéricos e iniciar con 10 o 20.'}
+                                </p>
+                              ) : invoiceDocFeedback ? (
+                                <p
+                                  className={`mt-1 text-left font-mono text-[11px] ${
+                                    invoiceDocFeedbackError
+                                      ? 'text-rose-500'
+                                      : 'text-emerald-600 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {invoiceDocFeedback}
+                                </p>
+                              ) : null}
                             </div>
 
-                            {/* Nombre o Razón Social */}
+                            {/* Nombre Completo (DNI) / Razón Social (RUC) estrictamente readOnly */}
                             <div>
                               <label className="field-label">
-                                {invoiceType === 'boleta' ? 'Nombre Completo' : 'Razón Social'}
+                                {invoiceType === 'boleta'
+                                  ? 'Nombre Completo (Verificación RENIEC)'
+                                  : 'Razón Social (Verificación SUNAT)'}
                               </label>
                               <input
                                 type="text"
+                                readOnly
                                 value={invoiceName}
-                                onChange={e => {
-                                  markDirty('invoiceName')
-                                  setInvoiceName(e.target.value)
-                                }}
-                                onBlur={() => markTouched('invoiceName')}
                                 placeholder={
                                   invoiceType === 'boleta'
-                                    ? 'Nombre del titular'
-                                    : 'Nombre oficial de la empresa'
+                                    ? 'Pulsa la lupa para autocompletar desde RENIEC'
+                                    : 'Pulsa la lupa para autocompletar desde SUNAT'
                                 }
-                                className={getFieldClass('invoiceName', invoiceNameValid)}
+                                className={`field cursor-not-allowed rounded-[5px] bg-slate-100 text-slate-700 dark:bg-slate-800/70 dark:text-slate-300 ${
+                                  invoiceNameValid
+                                    ? 'border-emerald-500 dark:border-emerald-500'
+                                    : 'border-slate-300 dark:border-slate-700'
+                                }`}
                               />
                             </div>
 
-                            {/* Correo electrónico de envío */}
+                            {/* Correo electrónico de envío (editable) */}
                             <div>
                               <label className="field-label">Correo Electrónico de Envío</label>
                               <input
@@ -1390,6 +1491,11 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                 placeholder="facturacion@tuempresa.pe"
                                 className={getFieldClass('invoiceEmail', invoiceEmailValid)}
                               />
+                              {hasInteracted('invoiceEmail') && !invoiceEmailValid && (
+                                <p className="mt-1 text-left text-[11px] text-rose-500">
+                                  Ingresa un correo electrónico válido para recibir el comprobante.
+                                </p>
+                              )}
                             </div>
 
                             <button
@@ -1410,9 +1516,10 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   </div>
                 </div>
 
-                {/* Botón Principal Post-Pago con clases exactas */}
-                <a
-                  href={ADMIN_URL}
+                {/* Botón Principal Post-Pago: abre en nueva pestaña sin recargar la landing */}
+                <button
+                  type="button"
+                  onClick={() => window.open(ADMIN_URL, '_blank', 'noopener,noreferrer')}
                   className="group mt-6 flex w-full items-center justify-center gap-2 rounded-[5px] bg-slate-900 py-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 dark:bg-emerald-600 dark:text-white dark:hover:bg-emerald-500"
                 >
                   Ingresar al Panel de Despacho
@@ -1420,7 +1527,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                     size={16}
                     className="transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5"
                   />
-                </a>
+                </button>
               </section>
             )
           )}
