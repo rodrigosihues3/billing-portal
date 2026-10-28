@@ -508,7 +508,7 @@ export function Hero({ onStart }: HeroProps) {
             {/* Columna Izquierda: Copy Principal */}
             <div className="flex flex-col justify-center">
                 <h1 className="max-w-2xl text-4xl font-semibold leading-[1.08] tracking-[-.04em] text-slate-900 sm:text-5xl lg:text-6xl dark:text-white">
-                    Tus repartos. Tus clientes. Sin comisiones abusivas.
+                    Tus repartos. <br /> Tus clientes. <br /> Sin comisiones abusivas.
                 </h1>
 
                 <p className="mt-6 max-w-lg text-base leading-7 text-slate-600 sm:text-lg dark:text-slate-300">
@@ -538,7 +538,7 @@ export function Hero({ onStart }: HeroProps) {
                         <p className="text-[11px] text-slate-500 font-sans mt-0.5">Comisión por venta</p>
                     </div>
                     <div>
-                        <p className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">&lt; 15 seg</p>
+                        <p className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">Inmediata</p>
                         <p className="text-[11px] text-slate-500 font-sans mt-0.5">Asignación de orden</p>
                     </div>
                     <div>
@@ -568,7 +568,7 @@ export function Hero({ onStart }: HeroProps) {
                 {/* Indicadores: el progreso del punto activo dispara el cambio de slide */}
                 <nav
                     aria-label="Selector de módulos"
-                    className="inline-flex items-center gap-2 rounded-full border border-emerald-500/25 bg-emerald-500/10 px-3 py-1.5 shadow-xs backdrop-blur-md transition-all hover:border-emerald-500/40 dark:border-emerald-400/20 dark:bg-emerald-950/40"
+                    className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 shadow-xs backdrop-blur-md transition-all"
                 >
                     {SLIDE_NAMES.map((name, idx) => {
                         const isActive = activeSlide === idx

@@ -9,6 +9,10 @@ body {
 }
 
 * { box-sizing: border-box; }
+h1, h2, h3 { font-family: "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif; }
+:focus-visible { outline: 2px solid #059669; outline-offset: 2px; }
+section[id] { scroll-margin-top: 4.5rem; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
 button, a { transition: background-color .15s ease, color .15s ease, border-color .15s ease; }
 button { cursor: pointer; }
 .page-shell { width: min(100% - 2rem, 1120px); margin-inline: auto; }
