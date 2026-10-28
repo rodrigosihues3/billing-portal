@@ -399,7 +399,7 @@ function DriverSlide({ active }: { active: boolean }) {
                 <ul className="hidden min-w-0 flex-1 space-y-3.5 sm:block">
                     {[
                         [Bell, 'Aviso inmediato', 'Le suena cuando un pedido está listo para despacho.'],
-                        [Navigation, 'Ruta al destino', 'Abre la navegación con Google Maps en un toque.'],
+                        [Navigation, 'Ruta al destino', 'Abre la navegación en un toque.'],
                         [ShieldCheck, 'Entrega verificada', 'Solo se cierra con el PIN que le da el cliente.']
                     ].map(([Icon, label, text]) => {
                         const I = Icon as typeof Bell
@@ -428,7 +428,7 @@ function TrackingSlide({ active, animate }: { active: boolean; animate: boolean 
         <SlideShell
             active={active}
             icon={<UserRound size={12} />}
-            module="Seguimiento del cliente"
+            module="Seguimiento del cliente final"
             badge="SIN INSTALAR APPS"
             badgeClass={INDIGO_BADGE}
             title="Un enlace para que tu cliente siga su pedido"

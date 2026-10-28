@@ -13,7 +13,7 @@ export function Navbar({ dark, onThemeChange, onSubscribe }: Props) {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
     const navLinks = [
-        { href: '#para-quien', label: 'Para quién es' },
+        { href: '#para-quien', label: 'Para quién' },
         { href: '#como-funciona', label: 'Cómo funciona' },
         { href: '#beneficios', label: 'Beneficios' },
         { href: '#planes', label: 'Planes' }
