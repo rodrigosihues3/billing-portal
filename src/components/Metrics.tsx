@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, X, Calculator, TrendingUp } from 'lucide-react'
+import { Check, X, TrendingUp } from 'lucide-react'
 
 export function Metrics() {
     // Calculadora interactiva de ahorro
@@ -32,17 +32,14 @@ export function Metrics() {
         },
         {
             topic: 'Propiedad de tus clientes',
-            before: 'Los datos, hábitos de compra y números telefónicos quedan en manos del intermediario.',
-            after: 'Base de datos 100% tuya y privada para fidelizar y comunicarte directamente.'
+            before: 'Los datos quedan en manos del intermediario.',
+            after: 'Base de datos 100% tuya y privada para comunicarte directamente.'
         }
     ]
 
     return (
         <section id="beneficios" className="page-shell py-16 sm:py-20">
             <div className="max-w-2xl">
-                <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    BENEFICIOS REALES PARA TU NEGOCIO
-                </span>
                 <h2 className="mt-2.5 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
                     La diferencia entre depender de terceros y tener tu propia operación.
                 </h2>
@@ -108,10 +105,6 @@ export function Metrics() {
             <div className="mt-10 rounded-[5px] border border-slate-200 bg-white p-6 sm:p-8 shadow-xs dark:border-slate-800 dark:bg-slate-900">
                 <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 pb-6 border-b border-slate-100 dark:border-slate-800">
                     <div className="max-w-xl">
-                        <div className="inline-flex items-center gap-1.5 font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                            <Calculator size={15} />
-                            <span>CALCULADORA DE RENTABILIDAD</span>
-                        </div>
                         <h3 className="mt-1.5 text-xl font-bold tracking-tight text-slate-900 dark:text-white">
                             ¿Cuánto dinero conservas al eliminar el 25% de comisión?
                         </h3>
@@ -155,7 +148,7 @@ export function Metrics() {
                 <div className="mt-8 grid gap-4 sm:grid-cols-3">
                     <div className="rounded-[4px] border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/50">
                         <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                            Comisión típica en apps (25%)
+                            Comisión típica que te cobran otras apps (25%)
                         </p>
                         <p className="mt-1.5 font-mono text-xl font-bold text-rose-600 dark:text-rose-400">
                             - S/ {traditionalCommission.toLocaleString('es-PE')}
@@ -165,7 +158,7 @@ export function Metrics() {
 
                     <div className="rounded-[4px] border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/50">
                         <p className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                            Costo fijo Delivery Tracker
+                            Costo fijo único en nuestra app Delivery Tracker
                         </p>
                         <p className="mt-1.5 font-mono text-xl font-bold text-slate-900 dark:text-white">
                             S/ {fixedPlanCost}
@@ -178,7 +171,7 @@ export function Metrics() {
                         <div className="flex items-center gap-1.5">
                             <TrendingUp size={14} className="text-emerald-600 dark:text-emerald-400" />
                             <p className="text-[11px] font-bold text-emerald-900 dark:text-emerald-300">
-                                Ganancia extra conservada
+                                Ganancia conservada
                             </p>
                         </div>
                         <p className="mt-1.5 font-mono text-2xl font-bold text-emerald-700 dark:text-emerald-300">

@@ -53,9 +53,6 @@ export function Modules() {
         <section id="como-funciona" className="border-y border-slate-200/90 bg-slate-50/60 py-16 sm:py-20 dark:border-slate-800 dark:bg-slate-900/40 transition-colors">
             <div className="page-shell">
                 <div className="max-w-2xl">
-                    <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                        FLUJO OPERATIVO COMPLETO
-                    </span>
                     <h2 className="mt-2.5 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
                         Cómo viaja cada pedido: del ingreso a la entrega final.
                     </h2>
@@ -104,9 +101,8 @@ export function Modules() {
                 {/* Nota de sincronización en tiempo real sin jerga técnica */}
                 <div className="mt-8 rounded-[5px] border border-slate-200 bg-white p-4 text-xs sm:text-sm text-slate-600 shadow-xs dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 flex items-center justify-between flex-wrap gap-3">
                     <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
                         <span>
-                            <strong>Sincronización continua:</strong> Cada cambio de estado se refleja de inmediato en tu panel administrativo, en el celular de tu cliente y en tu sistema de ventas conectado.
+                            <strong>Sincronización continua:</strong> Cada cambio de estado se refleja de inmediato en tu panel administrativo, en la vista de tu cliente y en tu sistema de ventas conectado.
                         </span>
                     </div>
                 </div>

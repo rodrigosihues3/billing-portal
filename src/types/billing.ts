@@ -58,10 +58,10 @@ export const plans: PlanInfo[] = [
     id: 'trial',
     name: 'Prueba gratuita',
     price: 0,
-    description: 'Prueba durante 14 días el 100% de las capacidades del Plan Growth.',
+    description: 'Prueba durante 14 días el 100% de las capacidades del Plan Starter.',
     features: [
       '14 días sin costo',
-      '1,000 pedidos/mes y 5 repartidores activos',
+      '300 pedidos/mes y 2 repartidores activos',
       'Conexión directa por API incluida'
     ]
   },

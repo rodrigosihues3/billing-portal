@@ -16,7 +16,7 @@ export function Footer({ onOpenLegal }: FooterProps) {
                     {/* Columna Marca */}
                     <div className="space-y-3">
                         <a href="#inicio" className="flex items-center gap-2.5 text-base font-semibold tracking-tight text-slate-900 dark:text-white">
-                            <span className="grid h-8 w-8 place-items-center rounded-[5px] bg-slate-900 text-white dark:bg-white dark:text-slate-950">
+                            <span className="grid h-8 w-8 place-items-center rounded-[5px] text-white dark:bg-white dark:text-slate-950">
                                 <svg width="22" height="22" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                                     <path d="M6 26 C 7 21, 16 25, 20.5 21.5" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="0.1 3.8" />
                                     <path d="M21 20.5 C21 20.5 14.8 15 14.8 10.6 A6.2 6.2 0 0 1 27.2 10.6 C27.2 15 21 20.5 21 20.5Z" fill="#10b981" />
@@ -118,7 +118,7 @@ export function Footer({ onOpenLegal }: FooterProps) {
                                 className="inline-flex items-center gap-2 rounded-[5px] border border-emerald-300 bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/40 transition-colors"
                             >
                                 <MessageCircle size={15} className="text-emerald-600" />
-                                <span>WhatsApp: +51 961 211 119</span>
+                                <span>WhatsApp</span>
                             </a>
 
                             <div className="flex items-center gap-2 pt-1">

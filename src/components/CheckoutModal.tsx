@@ -60,6 +60,7 @@ interface SubscriptionEmailPayload {
   plan_name: string
   amount: number
   order_number: string
+  email_type?: 'full' | 'invoice_only'
   invoice_data?: {
     type: 'boleta' | 'factura'
     document_number: string
@@ -139,6 +140,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
   const [invoiceDocFeedback, setInvoiceDocFeedback] = useState('')
   const [invoiceDocFeedbackError, setInvoiceDocFeedbackError] = useState(false)
   const [invoiceSubmitting, setInvoiceSubmitting] = useState(false)
+  const [invoiceSuccess, setInvoiceSuccess] = useState(false)
   const [invoiceEmitted, setInvoiceEmitted] = useState<{
     type: 'boleta' | 'factura'
     document_number: string
@@ -147,7 +149,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
   } | null>(null)
 
   const selectedPlan = plans.find(p => p.id === currentPlan)!
-  const isTrial = currentPlan === 'trial'
+  const isTrial = selectedPlan.id === 'trial' || selectedPlan.price === 0
 
   const markDirty = (field: string) => setDirty(prev => (prev[field] ? prev : { ...prev, [field]: true }))
   const markTouched = (field: string) => setTouched(prev => (prev[field] ? prev : { ...prev, [field]: true }))
@@ -217,9 +219,9 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
 
   const passwordRules = [
     { id: 'length', label: 'Mínimo 8 caracteres', met: passRuleLength },
-    { id: 'upper', label: 'Al menos una letra mayúscula', met: passRuleUpper },
-    { id: 'number', label: 'Al menos un número', met: passRuleNumber },
-    { id: 'symbol', label: 'Al menos un símbolo (@$!%*?&#)', met: passRuleSymbol }
+    { id: 'upper', label: '1 mayúscula', met: passRuleUpper },
+    { id: 'number', label: '1 número', met: passRuleNumber },
+    { id: 'symbol', label: '1 símbolo', met: passRuleSymbol }
   ]
   const pendingPasswordRules = passwordRules.filter(r => !r.met)
   const passwordValid = pendingPasswordRules.length === 0
@@ -532,11 +534,12 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
         }
       }
 
-      const hasValidPreRuc = Boolean(effectiveRuc)
+      const hasValidPreRuc = !isTrial && Boolean(effectiveRuc)
       setHadPrePaymentRuc(hasValidPreRuc)
       setInvoiceEmail(form.email.trim())
       setInvoiceName('')
       setInvoiceDoc('')
+      setInvoiceSuccess(false)
       setResult(tx)
       setStep(4)
 
@@ -548,13 +551,14 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
         plan_name: selectedPlan.name,
         amount: isTrial ? 0 : selectedPlan.price,
         order_number: tx.id,
-        invoice_data: hasValidPreRuc
-          ? {
-              type: 'factura',
-              document_number: effectiveRuc!,
-              business_name: form.businessName.trim()
-            }
-          : undefined,
+        email_type: 'full',
+        invoice_data: isTrial || !hasValidPreRuc
+          ? undefined
+          : {
+            type: 'factura',
+            document_number: effectiveRuc!,
+            business_name: form.businessName.trim()
+          },
         app_url: ADMIN_URL
       })
     } catch (err: unknown) {
@@ -570,37 +574,50 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
     e.preventDefault()
     markTouched('invoiceDoc')
     markTouched('invoiceEmail')
-    if (!invoiceFormValid || !result) return
+    if (!invoiceFormValid || !result || invoiceSuccess || invoiceSubmitting) return
 
     setInvoiceSubmitting(true)
+    setInvoiceDocFeedback('')
+    setInvoiceDocFeedbackError(false)
     try {
       const cleanName = invoiceName.trim()
       const cleanEmail = invoiceEmail.trim()
 
-      triggerSubscriptionEmail({
+      const payload: SubscriptionEmailPayload = {
         customer_email: cleanEmail,
         customer_name: form.name.trim() || cleanName,
         plan_id: currentPlan,
         plan_name: selectedPlan.name,
         amount: isTrial ? 0 : selectedPlan.price,
         order_number: result.id,
+        email_type: 'invoice_only',
         invoice_data: {
           type: invoiceType,
           document_number: invoiceDoc,
           business_name: cleanName
         },
         app_url: ADMIN_URL
+      }
+
+      const { error } = await supabase.functions.invoke('send-subscription-email', {
+        body: payload
       })
 
-      await new Promise(r => setTimeout(r, 350))
+      if (error) {
+        throw new Error(error.message || 'Error al emitir y despachar el comprobante.')
+      }
 
+      setInvoiceSuccess(true)
       setInvoiceEmitted({
         type: invoiceType,
         document_number: invoiceDoc,
         business_name: cleanName,
         email: cleanEmail
       })
-      setInvoiceAccordionOpen(false)
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'No se pudo emitir el comprobante.'
+      setInvoiceDocFeedbackError(true)
+      setInvoiceDocFeedback(msg)
     } finally {
       setInvoiceSubmitting(false)
     }
@@ -621,7 +638,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
             </h2>
             <span className="inline-flex shrink-0 items-center gap-1.5 rounded-[5px] border border-emerald-600/30 bg-emerald-50 px-2 py-0.5 font-mono text-[11px] font-medium text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400">
               <span className="h-1.5 w-1.5 rounded-[5px] bg-emerald-500" />
-              {isTrial ? 'Prueba 14 días (Plan Growth)' : `Plan ${selectedPlan.name} · S/ ${selectedPlan.price}/mes`}
+              {isTrial ? 'Prueba 14 días (Plan Starter)' : `Plan ${selectedPlan.name} · S/ ${selectedPlan.price}/mes`}
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -712,11 +729,10 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   <div
                     key={p.id}
                     onClick={() => setCurrentPlan(p.id)}
-                    className={`relative cursor-pointer rounded-[5px] border p-3.5 transition-all ${
-                      active
-                        ? 'border-emerald-600 bg-emerald-50/40 ring-2 ring-emerald-500/20 dark:bg-emerald-950/20'
-                        : 'border-slate-200 hover:border-slate-300 hover:shadow-sm dark:border-slate-800'
-                    }`}
+                    className={`relative cursor-pointer rounded-[5px] border p-3.5 transition-all ${active
+                      ? 'border-emerald-600 bg-emerald-50/40 ring-2 ring-emerald-500/20 dark:bg-emerald-950/20'
+                      : 'border-slate-200 hover:border-slate-300 hover:shadow-sm dark:border-slate-800'
+                      }`}
                   >
                     {active && (
                       <span className="absolute -right-2 -top-2 grid h-5 w-5 place-items-center rounded-[5px] bg-emerald-600 text-white shadow-sm">
@@ -725,14 +741,14 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                     )}
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
+                        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900 dark:text-white">
                           <span>{p.name}</span>
                           {p.id === 'growth' && (
-                            <span className="rounded-[5px] bg-emerald-600 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider text-white">
+                            <span className="shrink-0 rounded-[5px] bg-emerald-600 px-1.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider text-white">
                               RECOMENDADO
                             </span>
                           )}
-                        </p>
+                        </div>
                         <p className="mt-0.5 text-xs text-slate-500">{p.description}</p>
                       </div>
                       <div className="min-w-[90px] shrink-0 text-right font-mono text-sm font-semibold text-slate-900 dark:text-white">
@@ -793,9 +809,8 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 />
                 {hasInteracted('email') && (
                   <p
-                    className={`mt-1 text-[11px] ${
-                      emailValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
-                    }`}
+                    className={`mt-1 text-[11px] ${emailValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+                      }`}
                   >
                     {emailValid ? '✓ Formato de correo electrónico válido.' : getEmailFeedback()}
                   </p>
@@ -846,9 +861,8 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 />
                 {hasInteracted('confirmPassword') && (
                   <p
-                    className={`mt-1 text-[11px] ${
-                      confirmPasswordValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
-                    }`}
+                    className={`mt-1 text-[11px] ${confirmPasswordValid ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-500'
+                      }`}
                   >
                     {confirmPasswordValid
                       ? '✓ Las contraseñas coinciden exactamente.'
@@ -877,96 +891,109 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
               </div>
             </form>
           ) : step === 2 ? (
-            /* 3. PASO 2: DATOS FISCALES PREVIOS (RUC OPCIONAL) */
+            /* 3. PASO 2: DATOS FISCALES PREVIOS (RUC OPCIONAL) O ACTIVACIÓN DE TRIAL */
             <section>
               <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Paso 2 · Datos Fiscales Previos al Pago
+                {isTrial ? 'Paso 2 · Activación de Prueba Gratuita' : 'Paso 2 · Datos Fiscales Previos al Pago'}
               </h3>
               <p className="mt-1 text-xs text-slate-500">
-                Consulta tu RUC si deseas emitir Factura Electrónica automáticamente. Este paso es opcional.
+                {isTrial
+                  ? 'Configuración inicial para tu acceso sin costo.'
+                  : 'Consulta tu RUC si deseas emitir Factura Electrónica automáticamente. Este paso es opcional.'}
               </p>
 
-              <div className="mt-4">
-                <label className="field-label">RUC del Comercio (Opcional)</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={form.document}
-                    onChange={e => {
-                      update('document', onlyNumbers(e.target.value, 11))
-                      setForm(prev => ({ ...prev, businessName: '' }))
-                      setVerifiedDoc(false)
-                      setRucAvailable(null)
-                      setDocFeedback('')
-                      setDocFeedbackError(false)
-                    }}
-                    onBlur={() => markTouched('document')}
-                    placeholder="Ej: 20601234567 o 10456789012"
-                    className={`field rounded-[5px] font-mono ${
-                      rucHasError || docFeedbackError
-                        ? 'border-rose-500 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 dark:border-rose-500'
-                        : rucValid && verifiedDoc
-                          ? 'border-emerald-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-500'
-                          : 'border-slate-300 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700'
-                    }`}
-                  />
-                  <button
-                    type="button"
-                    disabled={searchingDoc || !rucValid}
-                    onClick={handleSearchRuc}
-                    className="btn-secondary grid w-12 shrink-0 place-items-center rounded-[5px] disabled:opacity-40"
-                    title="Consultar RUC en SUNAT"
-                  >
-                    {searchingDoc ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
-                  </button>
-                </div>
-
-                {/* Único mensaje dinámico en el lado izquierdo debajo del input */}
-                <div className="mt-1.5 text-left">
-                  {rucModifiedAndInvalid ? (
-                    <p className="text-[11px] text-rose-500">
-                      Debe tener 11 dígitos numéricos e iniciar con 10 o 20
-                    </p>
-                  ) : docFeedback ? (
-                    <p
-                      className={`font-mono text-[11px] ${
-                        docFeedbackError
-                          ? 'text-rose-500'
-                          : 'text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {docFeedback}
-                    </p>
-                  ) : (
-                    <p className="font-mono text-[11px] text-slate-400">
-                      {form.document.length} / 11
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-4">
-                <label className="field-label">
-                  Razón Social (Verificación SUNAT)
-                </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={form.businessName}
-                  placeholder="Pulsa la lupa para autocompletar desde SUNAT"
-                  className={`field cursor-not-allowed rounded-[5px] bg-slate-100 text-slate-700 dark:bg-slate-800/70 dark:text-slate-300 ${
-                    verifiedDoc
-                      ? 'border-emerald-500 dark:border-emerald-500'
-                      : 'border-slate-300 dark:border-slate-700'
-                  }`}
-                />
-                {rucValid && !verifiedDoc && !searchingDoc && (
-                  <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
-                    Haz clic en el botón de búsqueda (lupa) para validar la Razón Social en SUNAT.
+              {isTrial ? (
+                /* VISTA INFORMATIVA TRIAL (SIN FACTURACIÓN) */
+                <div className="mt-4 rounded-[5px] border border-slate-200 bg-slate-50 p-4 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-300">
+                  <p className="font-semibold text-slate-900 dark:text-white">
+                    Facturación no aplicable
                   </p>
-                )}
-              </div>
+                  <p className="mt-1.5 leading-relaxed text-slate-600 dark:text-slate-400">
+                    El período de prueba de 14 días no genera comprobante de pago por tener un importe de S/ 0.00. Podrás configurar tus datos fiscales al contratar un plan definitivo.
+                  </p>
+                </div>
+              ) : (
+                /* FORMULARIO FISCAL PARA PLANES DE PAGO */
+                <>
+                  <div className="mt-4">
+                    <label className="field-label">RUC del Comercio (Opcional)</label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={form.document}
+                        onChange={e => {
+                          update('document', onlyNumbers(e.target.value, 11))
+                          setForm(prev => ({ ...prev, businessName: '' }))
+                          setVerifiedDoc(false)
+                          setRucAvailable(null)
+                          setDocFeedback('')
+                          setDocFeedbackError(false)
+                        }}
+                        onBlur={() => markTouched('document')}
+                        placeholder="Ej: 20601234567 o 10456789012"
+                        className={`field rounded-[5px] font-mono ${rucHasError || docFeedbackError
+                          ? 'border-rose-500 focus:border-rose-500 focus:ring-2 focus:ring-rose-500/20 dark:border-rose-500'
+                          : rucValid && verifiedDoc
+                            ? 'border-emerald-500 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 dark:border-emerald-500'
+                            : 'border-slate-300 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 dark:border-slate-700'
+                          }`}
+                      />
+                      <button
+                        type="button"
+                        disabled={searchingDoc || !rucValid}
+                        onClick={handleSearchRuc}
+                        className="btn-secondary grid w-12 shrink-0 place-items-center rounded-[5px] disabled:opacity-40"
+                        title="Consultar RUC en SUNAT"
+                      >
+                        {searchingDoc ? <Loader2 className="animate-spin" size={16} /> : <Search size={16} />}
+                      </button>
+                    </div>
+
+                    {/* Mensaje descriptivo a la izquierda solo en estado inválido o verificado */}
+                    {(rucModifiedAndInvalid || docFeedback) && (
+                      <div className="mt-1.5 text-left">
+                        {rucModifiedAndInvalid ? (
+                          <p className="text-[11px] text-rose-500">
+                            Debe tener 11 dígitos numéricos e iniciar con 10 o 20.
+                          </p>
+                        ) : docFeedback ? (
+                          <p
+                            className={`font-mono text-[11px] ${docFeedbackError
+                              ? 'text-rose-500'
+                              : 'text-emerald-600 dark:text-emerald-400'
+                              }`}
+                          >
+                            {docFeedback}
+                          </p>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4">
+                    <label className="field-label">
+                      Razón Social (Verificación SUNAT)
+                    </label>
+                    <input
+                      type="text"
+                      readOnly
+                      tabIndex={-1}
+                      value={form.businessName}
+                      placeholder="Pulsa la lupa para autocompletar desde SUNAT"
+                      className={`field cursor-not-allowed select-none rounded-[5px] bg-slate-100 text-slate-700 dark:bg-slate-800/70 dark:text-slate-300 ${verifiedDoc
+                        ? 'border-emerald-500 dark:border-emerald-500'
+                        : 'border-slate-300 dark:border-slate-700'
+                        }`}
+                    />
+                    {rucValid && !verifiedDoc && !searchingDoc && (
+                      <p className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                        Haz clic en el botón de búsqueda (lupa) para validar la Razón Social en SUNAT.
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
 
               <div className="mt-6 flex gap-2">
                 <button
@@ -978,10 +1005,10 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 </button>
                 <button
                   type="button"
-                  disabled={!step2Valid || loading}
+                  disabled={(!isTrial && !step2Valid) || loading}
                   onClick={() => {
                     if (isTrial) {
-                      void handleFinalizeProvisioning(rucValid && verifiedDoc)
+                      void handleFinalizeProvisioning(false)
                     } else {
                       setStep(3)
                     }
@@ -991,7 +1018,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                   {loading ? (
                     <Loader2 className="animate-spin" size={16} />
                   ) : isTrial ? (
-                    'Activar Prueba Gratuita (14 Días)'
+                    'Continuar a Activación'
                   ) : (
                     'Continuar a Pasarela de Pago'
                   )}
@@ -1031,22 +1058,20 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                 <button
                   type="button"
                   onClick={() => setMethod('card')}
-                  className={`flex items-center justify-center gap-2 rounded-[5px] py-2 text-xs font-semibold transition-all ${
-                    method === 'card'
-                      ? 'bg-slate-900 text-white shadow-xs dark:bg-emerald-600 dark:text-white'
-                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                  }`}
+                  className={`flex items-center justify-center gap-2 rounded-[5px] py-2 text-xs font-semibold transition-all ${method === 'card'
+                    ? 'bg-slate-900 text-white shadow-xs dark:bg-emerald-600 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                    }`}
                 >
                   <CreditCard size={15} /> Tarjeta
                 </button>
                 <button
                   type="button"
                   onClick={() => setMethod('yape')}
-                  className={`flex items-center justify-center gap-2 rounded-[5px] py-2 text-xs font-semibold transition-all ${
-                    method === 'yape'
-                      ? 'bg-slate-900 text-white shadow-xs dark:bg-emerald-600 dark:text-white'
-                      : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
-                  }`}
+                  className={`flex items-center justify-center gap-2 rounded-[5px] py-2 text-xs font-semibold transition-all ${method === 'yape'
+                    ? 'bg-slate-900 text-white shadow-xs dark:bg-emerald-600 dark:text-white'
+                    : 'text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white'
+                    }`}
                 >
                   <Smartphone size={15} /> Yape
                 </button>
@@ -1285,7 +1310,14 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
 
                   {/* SECCIÓN DE COMPROBANTE CONDICIONAL DENTRO DEL TICKET */}
                   <div className="border-t border-slate-200/80 px-4 py-3.5 dark:border-slate-700/80">
-                    {hadPrePaymentRuc ? (
+                    {isTrial ? (
+                      /* CASO TRIAL: No se genera cargo ni comprobante fiscal */
+                      <div className="rounded-[5px] border border-slate-200 bg-slate-50 p-3 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+                        <p className="font-medium">
+                          Prueba gratuita activa por 14 días. No se ha generado ningún cargo ni comprobante fiscal.
+                        </p>
+                      </div>
+                    ) : hadPrePaymentRuc ? (
                       /* CASO A: El usuario ya ingresó RUC en el Paso 2 */
                       <div className="flex items-start gap-2.5 rounded-[5px] border border-emerald-300 bg-emerald-50/80 p-3 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
                         <FileText size={16} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
@@ -1299,27 +1331,6 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                           </p>
                         </div>
                       </div>
-                    ) : invoiceEmitted ? (
-                      /* CASO B COMPLETADO: Comprobante emitido desde el acordeón inline */
-                      <div className="flex items-start gap-2.5 rounded-[5px] border border-emerald-300 bg-emerald-50/80 p-3 text-xs text-emerald-900 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200">
-                        <CheckCircle2 size={16} className="mt-0.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
-                        <div>
-                          <p className="font-semibold">
-                            {invoiceEmitted.type === 'factura'
-                              ? 'Factura Electrónica'
-                              : 'Boleta de Venta'}{' '}
-                            emitida para{' '}
-                            <span className="font-mono">
-                              {invoiceEmitted.type === 'factura' ? 'RUC' : 'DNI'}{' '}
-                              {invoiceEmitted.document_number}
-                            </span>{' '}
-                            - {invoiceEmitted.business_name}
-                          </p>
-                          <p className="mt-0.5 text-[11px] text-emerald-700 dark:text-emerald-300/90">
-                            Comprobante despachado a <span className="font-mono">{invoiceEmitted.email}</span>.
-                          </p>
-                        </div>
-                      </div>
                     ) : (
                       /* CASO B: Acordeón desplegable inline "¿Deseas comprobante de pago?" */
                       <div>
@@ -1330,7 +1341,9 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                         >
                           <span className="flex items-center gap-2">
                             <FileText size={15} className="text-emerald-600 dark:text-emerald-400" />
-                            ¿Deseas comprobante de pago?
+                            {invoiceSuccess
+                              ? 'Comprobante de pago emitido'
+                              : '¿Deseas comprobante de pago?'}
                           </span>
                           {invoiceAccordionOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                         </button>
@@ -1345,7 +1358,9 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                             <div className="grid grid-cols-2 gap-1.5 rounded-[5px] border border-slate-200 bg-slate-100 p-1 dark:border-slate-800 dark:bg-slate-800">
                               <button
                                 type="button"
+                                disabled={invoiceSuccess}
                                 onClick={() => {
+                                  if (invoiceSuccess) return
                                   setInvoiceType('boleta')
                                   setInvoiceDoc('')
                                   setInvoiceName('')
@@ -1354,17 +1369,18 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                   setDirty(prev => ({ ...prev, invoiceDoc: false }))
                                   setTouched(prev => ({ ...prev, invoiceDoc: false }))
                                 }}
-                                className={`rounded-[5px] py-1.5 text-xs font-semibold transition-all ${
-                                  invoiceType === 'boleta'
-                                    ? 'bg-slate-900 text-white dark:bg-emerald-600 dark:text-white'
-                                    : 'text-slate-600 dark:text-slate-300'
-                                }`}
+                                className={`rounded-[5px] py-1.5 text-xs font-semibold transition-all ${invoiceType === 'boleta'
+                                  ? 'bg-slate-900 text-white dark:bg-emerald-600 dark:text-white'
+                                  : 'text-slate-600 dark:text-slate-300'
+                                  }`}
                               >
                                 Boleta (DNI)
                               </button>
                               <button
                                 type="button"
+                                disabled={invoiceSuccess}
                                 onClick={() => {
+                                  if (invoiceSuccess) return
                                   setInvoiceType('factura')
                                   setInvoiceDoc('')
                                   setInvoiceName('')
@@ -1373,17 +1389,16 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                   setDirty(prev => ({ ...prev, invoiceDoc: false }))
                                   setTouched(prev => ({ ...prev, invoiceDoc: false }))
                                 }}
-                                className={`rounded-[5px] py-1.5 text-xs font-semibold transition-all ${
-                                  invoiceType === 'factura'
-                                    ? 'bg-slate-900 text-white dark:bg-emerald-600 dark:text-white'
-                                    : 'text-slate-600 dark:text-slate-300'
-                                }`}
+                                className={`rounded-[5px] py-1.5 text-xs font-semibold transition-all ${invoiceType === 'factura'
+                                  ? 'bg-slate-900 text-white dark:bg-emerald-600 dark:text-white'
+                                  : 'text-slate-600 dark:text-slate-300'
+                                  }`}
                               >
                                 Factura (RUC)
                               </button>
                             </div>
 
-                            {/* Documento con botón de búsqueda (lupa) integrado */}
+                            {/* Documento con botón de búsqueda (lupa) integrado idéntico al del Paso 2 */}
                             <div>
                               <label className="field-label">
                                 {invoiceType === 'boleta' ? 'Número de DNI' : 'Número de RUC'}
@@ -1392,6 +1407,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                 <input
                                   type="text"
                                   inputMode="numeric"
+                                  disabled={invoiceSuccess}
                                   value={invoiceDoc}
                                   onChange={e => {
                                     markDirty('invoiceDoc')
@@ -1406,17 +1422,16 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                       ? '8 dígitos numéricos'
                                       : '11 dígitos (10 o 20...)'
                                   }
-                                  className={`field rounded-[5px] font-mono ${
-                                    invoiceDocInvalid || invoiceDocFeedbackError
-                                      ? 'border-rose-500 focus:border-rose-500'
-                                      : invoiceDocValid && invoiceNameValid
-                                        ? 'border-emerald-500 focus:border-emerald-600'
-                                        : 'border-slate-300 dark:border-slate-700'
-                                  }`}
+                                  className={`field rounded-[5px] font-mono ${invoiceDocInvalid || invoiceDocFeedbackError
+                                    ? 'border-rose-500 focus:border-rose-500'
+                                    : invoiceDocValid && invoiceNameValid
+                                      ? 'border-emerald-500 focus:border-emerald-600'
+                                      : 'border-slate-300 dark:border-slate-700'
+                                    }`}
                                 />
                                 <button
                                   type="button"
-                                  disabled={searchingInvoiceDoc || !invoiceDocValid}
+                                  disabled={searchingInvoiceDoc || !invoiceDocValid || invoiceSuccess}
                                   onClick={handleSearchInvoiceDoc}
                                   className="btn-secondary grid w-12 shrink-0 place-items-center rounded-[5px] disabled:opacity-40"
                                   title={
@@ -1442,11 +1457,10 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                                 </p>
                               ) : invoiceDocFeedback ? (
                                 <p
-                                  className={`mt-1 text-left font-mono text-[11px] ${
-                                    invoiceDocFeedbackError
-                                      ? 'text-rose-500'
-                                      : 'text-emerald-600 dark:text-emerald-400'
-                                  }`}
+                                  className={`mt-1 text-left font-mono text-[11px] ${invoiceDocFeedbackError
+                                    ? 'text-rose-500'
+                                    : 'text-emerald-600 dark:text-emerald-400'
+                                    }`}
                                 >
                                   {invoiceDocFeedback}
                                 </p>
@@ -1463,17 +1477,17 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                               <input
                                 type="text"
                                 readOnly
+                                tabIndex={-1}
                                 value={invoiceName}
                                 placeholder={
                                   invoiceType === 'boleta'
                                     ? 'Pulsa la lupa para autocompletar desde RENIEC'
                                     : 'Pulsa la lupa para autocompletar desde SUNAT'
                                 }
-                                className={`field cursor-not-allowed rounded-[5px] bg-slate-100 text-slate-700 dark:bg-slate-800/70 dark:text-slate-300 ${
-                                  invoiceNameValid
-                                    ? 'border-emerald-500 dark:border-emerald-500'
-                                    : 'border-slate-300 dark:border-slate-700'
-                                }`}
+                                className={`field cursor-not-allowed select-none rounded-[5px] bg-slate-100 text-slate-700 dark:bg-slate-800/70 dark:text-slate-300 ${invoiceNameValid
+                                  ? 'border-emerald-500 dark:border-emerald-500'
+                                  : 'border-slate-300 dark:border-slate-700'
+                                  }`}
                               />
                             </div>
 
@@ -1482,6 +1496,7 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                               <label className="field-label">Correo Electrónico de Envío</label>
                               <input
                                 type="email"
+                                disabled={invoiceSuccess}
                                 value={invoiceEmail}
                                 onChange={e => {
                                   markDirty('invoiceEmail')
@@ -1498,13 +1513,32 @@ export function CheckoutModal({ initialPlan, onClose }: Props) {
                               )}
                             </div>
 
+                            {invoiceEmitted && (
+                              <div className="flex items-center gap-2 rounded-[5px] border border-emerald-300 bg-emerald-50/90 p-2.5 text-xs text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                <CheckCircle2 size={15} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                <span>
+                                  {invoiceEmitted.type === 'factura' ? 'Factura' : 'Boleta'} emitida con éxito para{' '}
+                                  <strong className="font-mono">{invoiceEmitted.document_number}</strong> y enviada a{' '}
+                                  <strong className="font-mono">{invoiceEmitted.email}</strong>.
+                                </span>
+                              </div>
+                            )}
+
                             <button
                               type="submit"
-                              disabled={!invoiceFormValid || invoiceSubmitting}
-                              className="flex w-full items-center justify-center gap-2 rounded-[5px] bg-emerald-600 py-2.5 text-xs font-bold text-white transition-colors hover:bg-emerald-500 disabled:opacity-40"
+                              disabled={!invoiceFormValid || invoiceSubmitting || invoiceSuccess}
+                              className={`flex w-full items-center justify-center gap-2 rounded-[5px] py-2.5 text-xs font-bold transition-all ${invoiceSuccess
+                                ? 'cursor-not-allowed bg-emerald-700 text-white opacity-90'
+                                : 'bg-emerald-600 text-white hover:bg-emerald-500 disabled:opacity-40'
+                                }`}
                             >
                               {invoiceSubmitting ? (
                                 <Loader2 className="animate-spin" size={15} />
+                              ) : invoiceSuccess ? (
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Check size={14} strokeWidth={2.5} />
+                                  Comprobante emitido y enviado a tu correo
+                                </span>
                               ) : (
                                 'Confirmar y Emitir Comprobante'
                               )}

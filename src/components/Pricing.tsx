@@ -11,16 +11,16 @@ export function Pricing({ onSelect }: PricingProps) {
             id: 'starter' as Plan,
             name: 'Starter',
             price: 99,
-            description: 'Para negocios que inician su reparto propio por WhatsApp, mostrador o tienda web.',
-            subtitle: 'Incluye toda la suite base:',
+            description: 'Para negocios independientes que inician su propio reparto sin intermediarios.',
+            subtitle: '',
             features: [
-                'Hasta 2 repartidores activos simultáneos',
-                'Hasta 300 pedidos completados al mes',
-                'Conexión directa por API con tu tienda web',
-                'Panel de control administrativo general',
-                'Módulo de preparación (tablero de despacho)',
-                'App exclusiva para tus repartidores',
-                'Enlace de seguimiento web con PIN de 4 dígitos'
+                'Hasta 2 repartidores en simultáneo',
+                'Hasta 300 pedidos al mes',
+                'Panel web de control y cocina',
+                'App móvil para repartidores',
+                'Seguimiento en vivo para clientes (PIN)',
+                'Conexión directa por API a tu web',
+                'Soporte técnico estándar'
             ],
             featured: false,
             cta: 'Contratar Starter'
@@ -29,15 +29,17 @@ export function Pricing({ onSelect }: PricingProps) {
             id: 'growth' as Plan,
             name: 'Growth',
             price: 199,
-            description: 'Para negocios en expansión con volumen regular de entregas y flota activa.',
-            subtitle: 'Todo lo de Starter, más:',
+            description: 'Para comercios consolidados con despacho continuo y flota activa.',
+            subtitle: '',
             features: [
-                'Hasta 5 repartidores activos simultáneos',
-                'Hasta 1,000 pedidos completados al mes',
-                'Conexión directa por API y sincronización en tiempo real',
-                'Asignación optimizada de repartidores',
-                'Historial completo exportable de despachos',
-                'Reportes operativos de tiempos y entregas'
+                'Hasta 5 repartidores en simultáneo',
+                'Hasta 1,000 pedidos al mes',
+                'Panel web de control y cocina',
+                'App móvil para repartidores',
+                'Seguimiento en vivo para clientes (PIN)',
+                'Conexión directa por API a tu web',
+                'Soporte técnico estándar',
+                'Historial y métricas exportables (CSV)'
             ],
             featured: true,
             badge: 'MÁS ELEGIDO',
@@ -47,29 +49,28 @@ export function Pricing({ onSelect }: PricingProps) {
             id: 'enterprise' as Plan,
             name: 'Enterprise',
             price: 399,
-            description: 'Para cadenas, franquicias o múltiples locales con flota amplia.',
-            subtitle: 'Todo lo de Growth, más:',
+            description: 'Para operaciones de alto volumen que requieren capacidad ilimitada.',
+            subtitle: '',
             features: [
                 'Repartidores activos ilimitados',
-                'Hasta 3,000 pedidos completados al mes',
-                'Gestión multisede para varias sucursales',
-                'Prioridad en atención y soporte técnico directo',
-                'Métricas operativas avanzadas por sede',
-                'Acompañamiento en la puesta en marcha'
+                'Hasta 3,000 pedidos al mes',
+                'Panel web de control y cocina',
+                'App móvil para repartidores',
+                'Seguimiento en vivo para clientes (PIN)',
+                'Conexión directa por API a tu web',
+                'Múltiples accesos administrativos',
+                'Soporte prioritario y puesta en marcha'
             ],
             featured: false,
             cta: 'Contratar Enterprise'
         }
-    ]
+    ];
 
     return (
         <section id="planes" className="page-shell py-16 sm:py-20 border-t border-slate-200/80 dark:border-slate-800/80">
             <div className="max-w-2xl">
-                <span className="font-mono text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-                    TARIFAS PLANAS MENSUALES
-                </span>
                 <h2 className="mt-2.5 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
-                    Un plan adaptado a tu volumen. Sin cobros sorpresa.
+                    Un plan adaptado a tu volumen. <br /> Sin cobros sorpresa.
                 </h2>
                 <p className="mt-3 text-base text-slate-600 dark:text-slate-300">
                     Elige el plan según la cantidad de motorizados y pedidos de tu operación. Todos los precios incluyen IGV.
@@ -83,8 +84,8 @@ export function Pricing({ onSelect }: PricingProps) {
                         <article
                             key={plan.id}
                             className={`relative flex flex-col justify-between overflow-hidden rounded-[5px] border bg-white p-7 transition-all dark:bg-slate-900 ${plan.featured
-                                    ? 'border-emerald-600 shadow-xl ring-2 ring-emerald-500/20 dark:border-emerald-500 lg:-translate-y-2'
-                                    : 'border-slate-200 shadow-xs hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:hover:border-slate-700'
+                                ? 'border-emerald-600 shadow-xl ring-2 ring-emerald-500/20 dark:border-emerald-500 lg:-translate-y-2'
+                                : 'border-slate-200 shadow-xs hover:border-slate-300 hover:shadow-md dark:border-slate-800 dark:hover:border-slate-700'
                                 }`}
                         >
                             {plan.featured && (
@@ -143,7 +144,7 @@ export function Pricing({ onSelect }: PricingProps) {
                                 className={
                                     plan.featured
                                         ? 'btn-cta mt-8 w-full py-3 text-xs sm:text-sm font-bold flex items-center justify-center gap-1.5'
-                                        : 'mt-8 w-full rounded-[5px] border border-slate-300 bg-slate-100 py-3 text-xs sm:text-sm font-bold text-slate-800 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700 transition-all'
+                                        : 'mt-8 w-full rounded-[5px] border border-slate-300 bg-slate-100 py-3 text-xs sm:text-sm font-bold text-slate-800 hover:bg-slate-200 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700 transition-all flex items-center justify-center gap-1.5'
                                 }
                             >
                                 {plan.cta}
@@ -152,6 +153,27 @@ export function Pricing({ onSelect }: PricingProps) {
                         </article>
                     )
                 })}
+            </div>
+
+            {/* Banner de Prueba Gratuita (Equivalencia Plan Starter) */}
+            <div className="mt-6 flex flex-col gap-4 rounded-[5px] border border-emerald-300/80 bg-white p-6 shadow-xs sm:flex-row sm:items-center sm:justify-between dark:border-emerald-800/80 dark:bg-slate-900">
+                <div className="space-y-1">
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-900 dark:text-white">
+                            100% Capacidades del Plan Starter
+                        </span>
+                    </div>
+                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl">
+                        La prueba gratuita de 14 días hereda el 100% de las capacidades del <strong>Plan Starter</strong>: hasta 300 pedidos al mes, 2 repartidores activos y conexión directa por API.
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    onClick={() => onSelect('trial')}
+                    className="shrink-0 rounded-[5px] border border-emerald-600 bg-emerald-50 px-5 py-3 text-xs sm:text-sm font-bold text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50 transition-colors"
+                >
+                    Probar 14 días gratis
+                </button>
             </div>
 
             {/* Política de Límite de Pedidos Mensual */}
@@ -163,30 +185,6 @@ export function Pricing({ onSelect }: PricingProps) {
                         Al llegar al tope mensual, el sistema bloquea temporalmente la creación de nuevos pedidos para evitar cobros no autorizados. Tu acceso nunca se interrumpe: puedes seguir auditando el historial, consultando reportes y visualizando a tus repartidores hasta el inicio del próximo ciclo o al subir de plan en cualquier momento.
                     </p>
                 </div>
-            </div>
-
-            {/* Banner de Prueba Gratuita (Equivalencia Plan Growth) */}
-            <div className="mt-6 flex flex-col gap-4 rounded-[5px] border border-emerald-300/80 bg-white p-6 shadow-xs sm:flex-row sm:items-center sm:justify-between dark:border-emerald-800/80 dark:bg-slate-900">
-                <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                        <span className="rounded-[5px] bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300">
-                            14 DÍAS GRATIS
-                        </span>
-                        <span className="text-xs font-semibold text-slate-900 dark:text-white">
-                            100% Capacidades del Plan Growth
-                        </span>
-                    </div>
-                    <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-300 max-w-xl">
-                        La prueba gratuita de 14 días hereda el 100% de las capacidades del <strong>Plan Growth</strong>: hasta 1,000 pedidos al mes, 5 repartidores activos y conexión directa por API.
-                    </p>
-                </div>
-                <button
-                    type="button"
-                    onClick={() => onSelect('trial')}
-                    className="shrink-0 rounded-[5px] border border-emerald-600 bg-emerald-50 px-5 py-3 text-xs sm:text-sm font-bold text-emerald-800 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-300 dark:hover:bg-emerald-900/50 transition-colors"
-                >
-                    Probar 14 días gratis
-                </button>
             </div>
         </section>
     )

@@ -1,7 +1,8 @@
 // @ts-ignore: Deno URL import resolved at runtime in Supabase Edge Functions
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.0";
 // @ts-ignore: Deno URL import resolved at runtime in Supabase Edge Functions
-import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.9";
+// import { PDFDocument, rgb, StandardFonts } from "https://cdn.skypack.dev/pdf-lib@1.17.9?dts";
+import { PDFDocument, rgb, StandardFonts } from "https://esm.sh/pdf-lib@1.17.1";
 
 declare const Deno: {
   env: {
@@ -24,6 +25,7 @@ export interface SubscriptionEmailPayload {
   plan_name: string;
   amount: number;
   order_number: string;
+  email_type?: "full" | "invoice_only";
   invoice_data?: {
     type: "boleta" | "factura";
     document_number: string;
@@ -56,8 +58,8 @@ const PLAN_SPECS: Record<string, PlanSpec> = {
     driversLimit: "Repartidores activos ilimitados + Operación multisede + API",
   },
   trial: {
-    ordersLimit: "Hasta 1,000 pedidos completados / mes (14 días gratis)",
-    driversLimit: "Hasta 5 repartidores activos + Conexión directa por API (100% Plan Growth)",
+    ordersLimit: "Hasta 300 pedidos completados / mes (14 días gratis)",
+    driversLimit: "Hasta 2 repartidores activos + Conexión directa por API (100% Plan Starter)",
   },
 };
 
@@ -95,20 +97,23 @@ async function generateInvoicePdf(
   const fontMono = await pdfDoc.embedFont(StandardFonts.Courier);
   const fontMonoBold = await pdfDoc.embedFont(StandardFonts.CourierBold);
 
-  const slateDark = rgb(0.06, 0.09, 0.16);
-  const emeraldAccent = rgb(0.02, 0.59, 0.41);
-  const slateMuted = rgb(0.39, 0.45, 0.55);
-  const borderLight = rgb(0.88, 0.91, 0.94);
-  const bgSoft = rgb(0.97, 0.98, 0.99);
+  // --- PALETA REFINADA: ESTILO FACTURA B2B CORPORATIVA ---
   const white = rgb(1, 1, 1);
+  const headerBg = rgb(0.97, 0.98, 0.99); // Gris perla tenue para cabecera y fondos (#f8fafc)
+  const tableHeaderBg = rgb(0.94, 0.95, 0.97); // Gris neutro suave para cabecera de tabla (#f1f5f9)
+  const textMain = rgb(0.09, 0.12, 0.17); // Slate 900 profundo (#171f2c)
+  const textMuted = rgb(0.42, 0.47, 0.55); // Slate 500 para etiquetas secundarias (#6b788c)
+  const brandAccent = rgb(0.04, 0.45, 0.35); // Esmeralda bancario sobrio (#0a7359)
+  const borderLight = rgb(0.86, 0.89, 0.93); // Borde slate 200 tenue (#dbe2ec)
+  const borderStrong = rgb(0.70, 0.75, 0.82); // Borde delimitador sutil (#b3bfd1)
 
-  // 1. Franja superior slate oscuro y acento verde esmeralda
+  // 1. Franja superior gris perla y acento esmeralda bancario
   page.drawRectangle({
     x: 0,
     y: height - 115,
     width,
     height: 115,
-    color: slateDark,
+    color: headerBg,
   });
 
   page.drawRectangle({
@@ -116,95 +121,104 @@ async function generateInvoicePdf(
     y: height - 119,
     width,
     height: 4,
-    color: emeraldAccent,
+    color: brandAccent,
   });
 
   // Datos del emisor en cabecera
   page.drawText("DELIVERY TRACKER S.A.C.", {
     x: 45,
     y: height - 48,
-    size: 16,
+    size: 15,
     font: fontBold,
-    color: white,
+    color: textMain,
   });
 
   page.drawText("RUC: 20609876543  |  Dirección: Lima, Perú", {
     x: 45,
     y: height - 68,
-    size: 10,
-    font: fontMono,
-    color: rgb(0.75, 0.82, 0.9),
-  });
-
-  page.drawText("Logística y Despacho sin Comisiones", {
-    x: 45,
-    y: height - 86,
     size: 9.5,
     font: fontRegular,
-    color: emeraldAccent,
+    color: textMuted,
   });
 
-  // Recuadro fiscal derecho en cabecera
+  page.drawText("Logística y Despacho sin Comisiones · Plataforma SaaS B2B", {
+    x: 45,
+    y: height - 86,
+    size: 9,
+    font: fontRegular,
+    color: brandAccent,
+  });
+
+  // Recuadro fiscal derecho en cabecera (Normativa SUNAT: centrado reglamentario)
   const boxWidth = 225;
-  const boxHeight = 68;
+  const boxHeight = 72;
   const boxX = width - boxWidth - 45;
-  const boxY = height - 92;
+  const boxY = height - 94;
 
   page.drawRectangle({
     x: boxX,
     y: boxY,
     width: boxWidth,
     height: boxHeight,
-    color: rgb(0.11, 0.16, 0.25),
-    borderColor: emeraldAccent,
-    borderWidth: 1.2,
+    color: white,
+    borderColor: borderStrong,
+    borderWidth: 1,
   });
 
-  page.drawText("R.U.C. 20609876543", {
-    x: boxX + 16,
-    y: boxY + 46,
-    size: 10,
+  // 1. R.U.C. del Emisor
+  const rucText = "R.U.C. 20609876543";
+  const rucSize = 10.5;
+  const rucWidth = fontMonoBold.widthOfTextAtSize(rucText, rucSize);
+  page.drawText(rucText, {
+    x: boxX + (boxWidth - rucWidth) / 2,
+    y: boxY + 49,
+    size: rucSize,
     font: fontMonoBold,
-    color: white,
+    color: textMain,
   });
 
-  page.drawText(
-    isFactura ? "FACTURA ELECTRÓNICA" : "BOLETA DE VENTA ELECTRÓNICA",
-    {
-      x: boxX + 16,
-      y: boxY + 29,
-      size: 9.5,
-      font: fontBold,
-      color: emeraldAccent,
-    }
-  );
+  // 2. Título de Comprobante
+  const docTypeLabel = isFactura ? "FACTURA ELECTRÓNICA" : "BOLETA DE VENTA ELECTRÓNICA";
+  const docTypeSize = isFactura ? 10 : 9;
+  const docTypeWidth = fontBold.widthOfTextAtSize(docTypeLabel, docTypeSize);
+  page.drawText(docTypeLabel, {
+    x: boxX + (boxWidth - docTypeWidth) / 2,
+    y: boxY + 31,
+    size: docTypeSize,
+    font: fontBold,
+    color: brandAccent,
+  });
 
-  page.drawText(seriesCode, {
-    x: boxX + 16,
-    y: boxY + 12,
-    size: 11,
+  // 3. Serie y Número
+  const seriesText = `N° ${seriesCode}`;
+  const seriesSize = 11;
+  const seriesWidth = fontMonoBold.widthOfTextAtSize(seriesText, seriesSize);
+  page.drawText(seriesText, {
+    x: boxX + (boxWidth - seriesWidth) / 2,
+    y: boxY + 13,
+    size: seriesSize,
     font: fontMonoBold,
-    color: white,
+    color: textMain,
   });
 
   // 2. Sección de Datos del Receptor / Cliente
-  let cursorY = height - 155;
+  let cursorY = height - 152;
 
   page.drawText("DATOS DEL RECEPTOR", {
     x: 45,
     y: cursorY,
-    size: 9.5,
-    font: fontMonoBold,
-    color: emeraldAccent,
+    size: 9,
+    font: fontBold,
+    color: textMain,
   });
 
-  cursorY -= 14;
+  cursorY -= 12;
   page.drawRectangle({
     x: 45,
-    y: cursorY - 88,
+    y: cursorY - 86,
     width: width - 90,
-    height: 88,
-    color: bgSoft,
+    height: 86,
+    color: headerBg,
     borderColor: borderLight,
     borderWidth: 1,
   });
@@ -217,134 +231,136 @@ async function generateInvoicePdf(
   page.drawText(nameLabel, {
     x: 60,
     y: cursorY - 24,
-    size: 9.5,
+    size: 9,
     font: fontBold,
-    color: slateMuted,
+    color: textMuted,
   });
   page.drawText(receptorName.slice(0, 58), {
     x: 165,
     y: cursorY - 24,
-    size: 10,
+    size: 9.5,
     font: fontBold,
-    color: slateDark,
+    color: textMain,
   });
 
   page.drawText(docLabel, {
     x: 60,
     y: cursorY - 44,
-    size: 9.5,
+    size: 9,
     font: fontBold,
-    color: slateMuted,
+    color: textMuted,
   });
   page.drawText(invoice.document_number, {
     x: 165,
     y: cursorY - 44,
-    size: 10,
+    size: 9.5,
     font: fontMonoBold,
-    color: slateDark,
+    color: textMain,
   });
 
   page.drawText("Fecha de Emisión:", {
     x: 60,
     y: cursorY - 64,
-    size: 9.5,
+    size: 9,
     font: fontBold,
-    color: slateMuted,
+    color: textMuted,
   });
   page.drawText(issueDate, {
     x: 165,
     y: cursorY - 64,
-    size: 10,
+    size: 9.5,
     font: fontMono,
-    color: slateDark,
+    color: textMain,
   });
 
   page.drawText("Moneda:", {
     x: 340,
     y: cursorY - 44,
-    size: 9.5,
+    size: 9,
     font: fontBold,
-    color: slateMuted,
+    color: textMuted,
   });
   page.drawText("Soles (PEN)", {
     x: 415,
     y: cursorY - 44,
-    size: 10,
+    size: 9.5,
     font: fontRegular,
-    color: slateDark,
+    color: textMain,
   });
 
   page.drawText("Ticket Origen:", {
     x: 340,
     y: cursorY - 64,
-    size: 9.5,
+    size: 9,
     font: fontBold,
-    color: slateMuted,
+    color: textMuted,
   });
   page.drawText(payload.order_number, {
     x: 415,
     y: cursorY - 64,
     size: 9.5,
     font: fontMono,
-    color: slateDark,
+    color: textMain,
   });
 
   // 3. Detalle de la Transacción
-  cursorY -= 125;
+  cursorY -= 122;
   page.drawText("DETALLE DEL SERVICIO FACTURADO", {
     x: 45,
     y: cursorY,
-    size: 9.5,
-    font: fontMonoBold,
-    color: emeraldAccent,
+    size: 9,
+    font: fontBold,
+    color: textMain,
   });
 
   cursorY -= 12;
   // Cabecera de tabla
   page.drawRectangle({
     x: 45,
-    y: cursorY - 26,
+    y: cursorY - 24,
     width: width - 90,
-    height: 26,
-    color: slateDark,
+    height: 24,
+    color: tableHeaderBg,
+    borderColor: borderLight,
+    borderWidth: 1,
   });
 
   page.drawText("CANT.", {
     x: 58,
-    y: cursorY - 17,
-    size: 8.5,
-    font: fontMonoBold,
-    color: white,
+    y: cursorY - 16,
+    size: 8,
+    font: fontBold,
+    color: textMain,
   });
   page.drawText("DESCRIPCIÓN / CONCEPTO", {
     x: 115,
-    y: cursorY - 17,
-    size: 8.5,
-    font: fontMonoBold,
-    color: white,
+    y: cursorY - 16,
+    size: 8,
+    font: fontBold,
+    color: textMain,
   });
   page.drawText("V. UNITARIO", {
-    x: 380,
-    y: cursorY - 17,
-    size: 8.5,
-    font: fontMonoBold,
-    color: white,
+    x: 375,
+    y: cursorY - 16,
+    size: 8,
+    font: fontBold,
+    color: textMain,
   });
   page.drawText("IMPORTE", {
     x: 475,
-    y: cursorY - 17,
-    size: 8.5,
-    font: fontMonoBold,
-    color: white,
+    y: cursorY - 16,
+    size: 8,
+    font: fontBold,
+    color: textMain,
   });
 
   // Fila de concepto
-  cursorY -= 26;
+  cursorY -= 24;
   page.drawRectangle({
     x: 45,
-    y: cursorY - 42,
+    y: cursorY - 44,
     width: width - 90,
-    height: 42,
+    height: 44,
     color: white,
     borderColor: borderLight,
     borderWidth: 1,
@@ -352,42 +368,42 @@ async function generateInvoicePdf(
 
   page.drawText("1", {
     x: 65,
-    y: cursorY - 24,
-    size: 10,
+    y: cursorY - 22,
+    size: 9.5,
     font: fontMono,
-    color: slateDark,
+    color: textMain,
   });
   page.drawText(`Suscripción mensual - Plan ${payload.plan_name}`, {
     x: 115,
-    y: cursorY - 19,
-    size: 10,
+    y: cursorY - 18,
+    size: 9.5,
     font: fontBold,
-    color: slateDark,
+    color: textMain,
   });
-  page.drawText(docTitle, {
+  page.drawText("Acceso a plataforma de logística y despacho · Ciclo mensual recurrente", {
     x: 115,
-    y: cursorY - 33,
-    size: 8.5,
-    font: fontMono,
-    color: slateMuted,
+    y: cursorY - 32,
+    size: 8,
+    font: fontRegular,
+    color: textMuted,
   });
   page.drawText(`S/ ${opGravada.toFixed(2)}`, {
-    x: 380,
-    y: cursorY - 24,
-    size: 10,
+    x: 375,
+    y: cursorY - 22,
+    size: 9.5,
     font: fontMono,
-    color: slateDark,
+    color: textMain,
   });
   page.drawText(`S/ ${totalAmount.toFixed(2)}`, {
     x: 475,
-    y: cursorY - 24,
-    size: 10,
+    y: cursorY - 22,
+    size: 9.5,
     font: fontMonoBold,
-    color: slateDark,
+    color: textMain,
   });
 
   // 4. Desglose Contable Formal
-  cursorY -= 66;
+  cursorY -= 68;
   const summaryWidth = 235;
   const summaryX = width - summaryWidth - 45;
 
@@ -396,7 +412,7 @@ async function generateInvoicePdf(
     y: cursorY - 82,
     width: summaryWidth,
     height: 82,
-    color: bgSoft,
+    color: headerBg,
     borderColor: borderLight,
     borderWidth: 1,
   });
@@ -406,14 +422,14 @@ async function generateInvoicePdf(
     y: cursorY - 20,
     size: 9,
     font: fontRegular,
-    color: slateMuted,
+    color: textMuted,
   });
   page.drawText(`S/ ${opGravada.toFixed(2)}`, {
     x: summaryX + 155,
     y: cursorY - 20,
     size: 9.5,
     font: fontMono,
-    color: slateDark,
+    color: textMain,
   });
 
   page.drawText("IGV (18%):", {
@@ -421,21 +437,21 @@ async function generateInvoicePdf(
     y: cursorY - 40,
     size: 9,
     font: fontRegular,
-    color: slateMuted,
+    color: textMuted,
   });
   page.drawText(`S/ ${igvAmount.toFixed(2)}`, {
     x: summaryX + 155,
     y: cursorY - 40,
     size: 9.5,
     font: fontMono,
-    color: slateDark,
+    color: textMain,
   });
 
   page.drawLine({
     start: { x: summaryX + 10, y: cursorY - 50 },
     end: { x: summaryX + summaryWidth - 10, y: cursorY - 50 },
     thickness: 1,
-    color: borderLight,
+    color: borderStrong,
   });
 
   page.drawText("Importe Total:", {
@@ -443,14 +459,14 @@ async function generateInvoicePdf(
     y: cursorY - 68,
     size: 10.5,
     font: fontBold,
-    color: emeraldAccent,
+    color: textMain,
   });
   page.drawText(`S/ ${totalAmount.toFixed(2)}`, {
     x: summaryX + 150,
     y: cursorY - 68,
     size: 11,
     font: fontMonoBold,
-    color: slateDark,
+    color: textMain,
   });
 
   // 5. Pie de página con leyenda reglamentaria
@@ -462,13 +478,13 @@ async function generateInvoicePdf(
   });
 
   page.drawText(
-    "Representación impresa de Comprobante de Pago Electrónico simulado para fines académicos",
+    "Representación impresa de Comprobante de Pago Electrónico",
     {
       x: 45,
       y: 58,
       size: 8.5,
       font: fontRegular,
-      color: slateMuted,
+      color: textMuted,
     }
   );
 
@@ -476,8 +492,8 @@ async function generateInvoicePdf(
     x: 45,
     y: 43,
     size: 8,
-    font: fontMono,
-    color: emeraldAccent,
+    font: fontRegular,
+    color: brandAccent,
   });
 
   const base64 = await pdfDoc.saveAsBase64();
@@ -607,7 +623,7 @@ function buildSubscriptionHtml(payload: SubscriptionEmailPayload): string {
               <tr style="background-color: #ecfdf5;">
                 <td style="padding: 12px 14px; font-weight: 700; color: #065f46;">Importe Total</td>
                 <td style="padding: 12px 14px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 14px; text-align: right; color: #065f46;">
-                  Total: S/ ${formattedAmount}.00 - Incluye IGV
+                  Total: S/ ${formattedAmount}.00
                 </td>
               </tr>
             </table>
@@ -697,7 +713,15 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    // 3. Generar PDF del comprobante si existe invoice_data
+    // 3. Guarda defensiva para planes gratuitos / Trial (S/ 0.00)
+    const isFreePlan =
+      payload.plan_id === "trial" || Number(payload.amount || 0) === 0;
+    if (isFreePlan) {
+      // Prohibir la generación de PDF para importes cero
+      payload.invoice_data = undefined;
+    }
+
+    // 4. Generar PDF del comprobante si existe invoice_data
     let pdfAttachment: { name: string; content: string } | null = null;
     if (payload.invoice_data) {
       const { filename, base64 } = await generateInvoicePdf(payload);
@@ -705,9 +729,12 @@ Deno.serve(async (req: Request) => {
     }
 
     const htmlContent = buildSubscriptionHtml(payload);
-    const subject = payload.invoice_data
-      ? `Delivery Tracker · Comprobante y Confirmación de Plan ${payload.plan_name} (#${payload.order_number})`
-      : `Delivery Tracker · Confirmación de Suscripción Plan ${payload.plan_name} (#${payload.order_number})`;
+    const isInvoiceOnly = payload.email_type === "invoice_only";
+    const subject = isInvoiceOnly
+      ? `Delivery Tracker · Comprobante Electrónico Plan ${payload.plan_name} (#${payload.order_number})`
+      : payload.invoice_data
+        ? `Delivery Tracker · Comprobante y Confirmación de Plan ${payload.plan_name} (#${payload.order_number})`
+        : `Delivery Tracker · Confirmación de Suscripción Plan ${payload.plan_name} (#${payload.order_number})`;
 
     // 4. Construir y despachar el payload a la API REST de Brevo
     const brevoPayload: {

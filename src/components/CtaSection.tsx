@@ -1,4 +1,4 @@
-import { ArrowRight, ShieldCheck, Sparkles } from 'lucide-react'
+import { ArrowRight, ShieldCheck } from 'lucide-react'
 import type { Plan } from '../types/billing'
 
 interface CtaSectionProps {
@@ -10,17 +10,12 @@ export function CtaSection({ onStart }: CtaSectionProps) {
         <section className="border-t border-slate-200/80 bg-slate-50/50 py-16 sm:py-20 dark:border-slate-800/80 dark:bg-slate-900/30 transition-colors">
             <div className="page-shell">
                 <div className="rounded-[5px] border border-slate-200 bg-white p-8 sm:p-12 shadow-sm dark:border-slate-800 dark:bg-slate-900 text-center max-w-3xl mx-auto">
-                    <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 font-mono text-xs font-semibold text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-300">
-                        <Sparkles size={12} className="text-emerald-600 dark:text-emerald-400" />
-                        <span>EMPIEZA HOY MISMO</span>
-                    </div>
-
                     <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-900 sm:text-4xl dark:text-white">
                         Toma el control de tus repartos y deja de regalar tus márgenes.
                     </h2>
 
                     <p className="mt-3 text-sm sm:text-base text-slate-600 dark:text-slate-300 max-w-xl mx-auto">
-                        Activa tu cuenta con el RUC de tu empresa en menos de 2 minutos y empieza a despachar con tu propio equipo y sin comisiones por pedido.
+                        Activa tu cuenta en menos de 2 minutos y empieza a despachar con tu propio equipo y sin comisiones por pedido.
                     </p>
 
                     <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
